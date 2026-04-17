@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>マナ・サイクル・コロシアム - Ver 1.2</title>
+    <title>マナ・サイクル・コロシアム - Ver 1.21</title>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; color: #fff; user-select: none; }
         #login-screen { color: #33ff33; text-shadow: 0 0 5px #33ff33; padding: 30px; max-width: 600px; margin: 50px auto; border: 2px solid #33ff33; background: #051505; box-shadow: 0 0 20px rgba(51, 255, 51, 0.2); }
@@ -12,8 +12,8 @@
         input[type="text"] { background: #000; color: #33ff33; border: 1px solid #33ff33; padding: 8px; font-family: inherit; width: calc(100% - 20px); font-size: 16px; }
         button { background: #000; color: #33ff33; border: 1px solid #33ff33; padding: 10px 20px; font-family: inherit; font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.2s; width: 100%; margin-bottom: 10px; }
         button:hover:not(:disabled) { background: #33ff33; color: #000; }
-        button:disabled { border-color: #555; color: #555; cursor: not-allowed; text-shadow: none; }
-        #connection-log { margin-top: 20px; height: 120px; overflow-y: auto; font-size: 14px; border-top: 1px dashed #33ff33; padding-top: 10px; }
+        button:disabled { border-color: #555; color: #555; cursor: not-allowed; text-shadow: none; opacity: 0.5; }
+        #connection-log { margin-top: 20px; height: 120px; overflow-y: auto; font-size: 14px; border-top: 1px dashed #33ff33; padding-top: 10px; background: rgba(0,0,0,0.3); }
         #game-screen { display: none; width: 100vw; height: 100vh; position: relative; }
         #game-canvas { display: block; }
         #ui-panel { position: absolute; right: 0; top: 0; width: 300px; height: 100%; background: rgba(10, 5, 0, 0.9); border-left: 2px solid #5c4033; display: flex; flex-direction: column; box-shadow: -5px 0 15px rgba(0,0,0,0.8); }
@@ -32,7 +32,7 @@
 <div id="login-screen">
     <h1>マナ・サイクル・コロシアム</h1>
     <div id="connection-log">
-        <div>> SYSTEM: BOOT SEQUENCE...</div>
+        <div>> SYSTEM: BOOTING...</div>
     </div>
     <div class="input-group">
         <div>> ENTER USERNAME:</div>
@@ -66,13 +66,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// --- Config (Placeholder) ---
-const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'mana-cycle-col';
-
+// --- Global Variables ---
 let myId = '';
 let isHost = false;
 let roomRef = null;
@@ -88,38 +82,75 @@ let lastResolveId = null;
 
 function logCLI(msg) {
     const el = document.getElementById('connection-log');
+    if (!el) return;
     const div = document.createElement('div');
     div.innerHTML = '> ' + msg;
     el.appendChild(div);
     el.scrollTop = el.scrollHeight;
 }
 
-// Canvas環境用の確実な認証初期化プロセス
-const initAuth = async () => {
-    try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-            await signInAnonymously(auth);
-        }
-    } catch(e) {
-        logCLI(`ERROR: AUTH FAILED. ${e.message}`);
+function enableButtons() {
+    document.getElementById('btn-host').disabled = false;
+    document.getElementById('btn-join').disabled = false;
+    logCLI("SYSTEM: BUTTONS UNLOCKED.");
+}
+
+// --- Firebase Initialization ---
+let auth, db, appId;
+
+try {
+    logCLI("SYSTEM: INITIALIZING FIREBASE...");
+    const config = (typeof __firebase_config !== 'undefined') ? JSON.parse(__firebase_config) : null;
+    
+    if (!config) {
+        logCLI("CRITICAL: FIREBASE CONFIG MISSING.");
+    } else {
+        const app = initializeApp(config);
+        auth = getAuth(app);
+        db = getFirestore(app);
+        appId = typeof __app_id !== 'undefined' ? __app_id : 'mana-cycle-col';
+
+        // 認証リスナー
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                myId = user.uid;
+                logCLI(`SYSTEM: AUTH SUCCESS [${myId.substring(0,6)}]`);
+                enableButtons();
+            } else {
+                logCLI("SYSTEM: ATTEMPTING ANONYMOUS SIGN-IN...");
+            }
+        });
+
+        // サインイン実行
+        const startAuth = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (err) {
+                logCLI("ERROR: AUTH FAILED - " + err.message);
+                // 通信エラー等でも一応ボタンを開放（Firestoreのルール次第でエラーが出るがUIは動く）
+                setTimeout(enableButtons, 2000);
+            }
+        };
+        startAuth();
     }
-};
+} catch (e) {
+    logCLI("FATAL ERROR: " + e.message);
+    setTimeout(enableButtons, 3000); // 最後の手段として強制有効化
+}
 
-initAuth();
-
-// 認証状態の監視とUIのロック解除
-onAuthStateChanged(auth, (user) => {
-    if (user) {
-        myId = user.uid;
-        logCLI(`SYSTEM: AUTHENTICATED [${myId.substring(0,6)}]`);
-        document.getElementById('btn-host').disabled = false;
-        document.getElementById('btn-join').disabled = false;
+// バックアップタイマー（認証がスタックした場合用）
+setTimeout(() => {
+    if (document.getElementById('btn-host').disabled) {
+        logCLI("SYSTEM: AUTH TIMEOUT - FORCING UNLOCK...");
+        enableButtons();
     }
-});
+}, 5000);
 
-// --- カードデータ ---
+// --- カードデータ & ロジック (変更なし) ---
 const CARDS = [
     { id: 'c1', name: "Knight's Strike", type: "ATK", color: "#e74c3c", desc: "ランダムな相手から200pt奪う" },
     { id: 'c2', name: "Holy Barrier", type: "DEF", color: "#3498db", desc: "ターン内の減少を防ぐ" },
@@ -160,42 +191,50 @@ const CARD_EFFECTS = {
     }
 };
 
-// --- 通信ロジック ---
+// --- 通信ロジック (再入場対策) ---
 async function setupRoom(roomId, asHost) {
+    if (!myId) myId = crypto.randomUUID(); // 万が一認証に失敗していてもIDを生成
     currentRoomId = roomId;
     isHost = asHost;
     roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'mana_cycle_rooms', roomId);
     
-    const snap = await getDoc(roomRef);
-    const name = document.getElementById('username').value || 'Unknown';
+    try {
+        const snap = await getDoc(roomRef);
+        const name = document.getElementById('username').value || 'Unknown';
 
-    if (asHost) {
-        await setDoc(roomRef, {
-            hostId: myId, phase: 'LOBBY', currentRound: 0,
-            players: { [myId]: { name, score: 1000, isDefending: false } },
-            playerStatus: { [myId]: 'lobby' },
-            playerCard: { [myId]: null },
-            hands: {}, logs: [`<span class="turn-header">WELCOME TO ${roomId}</span>`], resolveId: 'init'
-        });
-    } else {
-        if (!snap.exists()) { alert("部屋が見つかりません"); return; }
-        // 既存プレイヤーなら上書きせず復帰、新規なら追加
-        const data = snap.data();
-        if (!data.players[myId]) {
-            await updateDoc(roomRef, {
-                [`players.${myId}`]: { name, score: 1000, isDefending: false },
-                [`playerStatus.${myId}`]: data.phase === 'LOBBY' ? 'lobby' : 'thinking'
+        if (asHost) {
+            await setDoc(roomRef, {
+                hostId: myId, phase: 'LOBBY', currentRound: 0,
+                players: { [myId]: { name, score: 1000, isDefending: false } },
+                playerStatus: { [myId]: 'lobby' },
+                playerCard: { [myId]: null },
+                hands: {}, logs: [`<span class="turn-header">WELCOME TO ${roomId}</span>`], resolveId: 'init'
             });
+        } else {
+            if (!snap.exists()) { alert("部屋が見つかりません"); return; }
+            const data = snap.data();
+            // 既存プレイヤーチェック（再入場対策）
+            if (!data.players[myId]) {
+                await updateDoc(roomRef, {
+                    [`players.${myId}`]: { name, score: 1000, isDefending: false },
+                    [`playerStatus.${myId}`]: data.phase === 'LOBBY' ? 'lobby' : 'thinking'
+                });
+            } else {
+                // 再入場時はステータスを復旧
+                await updateDoc(roomRef, { [`playerStatus.${myId}`]: data.phase === 'LOBBY' ? 'lobby' : 'thinking' });
+            }
         }
-    }
 
-    listenToRoom();
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('game-screen').style.display = 'block';
-    if(isHost) document.getElementById('lobby-controls').style.display = 'block';
-    document.getElementById('display-room-id').innerText = roomId;
-    resizeCanvas();
-    requestAnimationFrame(gameLoop);
+        listenToRoom();
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('game-screen').style.display = 'block';
+        if(isHost) document.getElementById('lobby-controls').style.display = 'block';
+        document.getElementById('display-room-id').innerText = roomId;
+        resizeCanvas();
+        requestAnimationFrame(gameLoop);
+    } catch (e) {
+        alert("エラーが発生しました: " + e.message);
+    }
 }
 
 function listenToRoom() {
@@ -204,35 +243,33 @@ function listenToRoom() {
         gameState = snap.data();
         currentRound = gameState.currentRound;
 
-        // プレイヤー配列の構築
         players = Object.keys(gameState.players).map(id => ({
             id, ...gameState.players[id],
             status: gameState.playerStatus[id],
             playedCardId: gameState.playerCard[id]
         }));
 
-        // 手札の同期
         if (gameState.hands && gameState.hands[myId]) {
             myHand = gameState.hands[myId].map(cid => CARDS.find(c => c.id === cid)).filter(Boolean);
         }
 
-        // アクションログの同期（差分のみ追加）
+        // アクションログ同期
         if (gameState.logs && gameState.logs.length > localLogCount) {
+            const list = document.getElementById('action-log');
             for (let i = localLogCount; i < gameState.logs.length; i++) {
-                addActionLog(gameState.logs[i]);
+                let li = document.createElement('li');
+                li.innerHTML = gameState.logs[i];
+                list.appendChild(li);
             }
             localLogCount = gameState.logs.length;
+            list.scrollTop = list.scrollHeight;
         }
 
-        // エフェクト演出
         if (gameState.resolveId && gameState.resolveId !== lastResolveId) {
             lastResolveId = gameState.resolveId;
-            if (gameState.lastParticles) {
-                gameState.lastParticles.forEach(p => spawnParticle(p));
-            }
+            if (gameState.lastParticles) gameState.lastParticles.forEach(p => spawnParticle(p));
         }
 
-        // ラウンド開始検知
         if (currentRound > lastRound && gameState.phase === 'PLAYING') {
             lastRound = currentRound;
             myState = 'SELECTING';
@@ -242,25 +279,18 @@ function listenToRoom() {
         updateLeaderboard();
         calculatePositions();
 
-        // ホスト：全員準備完了チェック
         if (isHost && gameState.phase === 'PLAYING') {
             const activePlayers = players.filter(p => p.status !== 'away');
             if (activePlayers.length > 0 && activePlayers.every(p => p.status === 'ready')) {
                 resolveRound();
             }
         }
+    }, (err) => {
+        console.error("Snapshot error:", err);
     });
 }
 
-function addActionLog(msg) {
-    const list = document.getElementById('action-log');
-    let li = document.createElement('li');
-    li.innerHTML = msg;
-    list.appendChild(li);
-    list.scrollTop = list.scrollHeight;
-}
-
-// --- ホスト処理: ラウンド解決 ---
+// --- ゲームロジック (変更なし) ---
 async function startRound() {
     let nextRound = gameState.currentRound + 1;
     let updates = {
@@ -282,43 +312,14 @@ async function resolveRound() {
     let newLogs = [];
     let newParts = [];
     let pData = JSON.parse(JSON.stringify(players));
-
-    // 1. 防御
-    pData.forEach(p => {
-        if(p.playedCardId === 'c2') {
-            p.isDefending = true;
-            newLogs.push(`🛡️ ${p.name}は防御した`);
-            newParts.push({from: p.id, to: p.id, color: '#00ffff', type: 'shield'});
-        }
-    });
-
-    // 2. 攻撃・魔術
-    pData.forEach(p => {
-        if(p.playedCardId && p.playedCardId !== 'c2') {
-            const fx = CARD_EFFECTS[p.playedCardId];
-            if(fx) fx(p, pData, newLogs, newParts);
-        }
-    });
-
-    let updates = {
-        logs: arrayUnion(...newLogs),
-        lastParticles: newParts,
-        resolveId: Date.now().toString()
-    };
-    pData.forEach(p => {
-        updates[`players.${p.id}.score`] = p.score;
-        updates[`players.${p.id}.isDefending`] = p.isDefending;
-    });
-
+    pData.forEach(p => { if(p.playedCardId === 'c2') { p.isDefending = true; newLogs.push(`🛡️ ${p.name}は防御した`); newParts.push({from: p.id, to: p.id, color: '#00ffff', type: 'shield'}); }});
+    pData.forEach(p => { if(p.playedCardId && p.playedCardId !== 'c2') { const fx = CARD_EFFECTS[p.playedCardId]; if(fx) fx(p, pData, newLogs, newParts); }});
+    let updates = { logs: arrayUnion(...newLogs), lastParticles: newParts, resolveId: Date.now().toString() };
+    pData.forEach(p => { updates[`players.${p.id}.score`] = p.score; updates[`players.${p.id}.isDefending`] = p.isDefending; });
     await updateDoc(roomRef, updates);
-
-    setTimeout(() => {
-        if (currentRound >= 10) updateDoc(roomRef, { phase: 'RESULT' });
-        else startRound();
-    }, 4000);
+    setTimeout(() => { if (currentRound >= 10) updateDoc(roomRef, { phase: 'RESULT' }); else startRound(); }, 4000);
 }
 
-// --- ボタンイベント ---
 document.getElementById('btn-host').onclick = () => setupRoom(Math.random().toString(36).substr(2,6).toUpperCase(), true);
 document.getElementById('btn-join').onclick = () => {
     const id = document.getElementById('room-id').value.toUpperCase();
@@ -326,7 +327,7 @@ document.getElementById('btn-join').onclick = () => {
 };
 document.getElementById('btn-start-game').onclick = () => { if(isHost) startRound(); };
 
-// --- Canvas描画ロジック ---
+// --- Canvas描画 (変更なし) ---
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
 let playerPositions = {};
@@ -334,124 +335,73 @@ let activeParticles = [];
 let selectedCardIndex = -1;
 let hoveredCardIndex = -1;
 
-function resizeCanvas() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    calculatePositions();
-}
+function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; calculatePositions(); }
 window.addEventListener('resize', resizeCanvas);
 
 function calculatePositions() {
     if(!players.length) return;
-    const gameW = canvas.width - 300;
-    const cx = gameW / 2;
-    const cy = canvas.height / 2 - 40;
-    const r = Math.min(gameW, canvas.height) * 0.3;
-    players.forEach((p, i) => {
-        const ang = -Math.PI/2 + (Math.PI*2/players.length)*i;
-        playerPositions[p.id] = { x: cx + r*Math.cos(ang), y: cy + r*Math.sin(ang) };
-    });
+    const gameW = canvas.width - 300; const cx = gameW / 2; const cy = canvas.height / 2 - 40; const r = Math.min(gameW, canvas.height) * 0.3;
+    players.forEach((p, i) => { const ang = -Math.PI/2 + (Math.PI*2/players.length)*i; playerPositions[p.id] = { x: cx + r*Math.cos(ang), y: cy + r*Math.sin(ang) }; });
 }
 
 function spawnParticle(p) {
-    const from = playerPositions[p.from];
-    const to = playerPositions[p.to];
-    if(!from || !to) return;
-    activeParticles.push({ ...p, startX: from.x, startY: from.y, targetX: to.x, targetY: to.y, progress: 0 });
+    const from = playerPositions[p.from]; const to = playerPositions[p.to];
+    if(!from || !to) return; activeParticles.push({ ...p, startX: from.x, startY: from.y, targetX: to.x, targetY: to.y, progress: 0 });
 }
 
 function gameLoop() {
     const gameW = canvas.width - 300;
-    ctx.fillStyle = '#0a0500';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
+    ctx.fillStyle = '#0a0500'; ctx.fillRect(0, 0, canvas.width, canvas.height);
     if(!gameState) { requestAnimationFrame(gameLoop); return; }
-
-    // プレイヤー描画
     players.forEach(p => {
-        const pos = playerPositions[p.id];
-        if(!pos) return;
+        const pos = playerPositions[p.id]; if(!pos) return;
         ctx.fillStyle = p.status === 'ready' ? '#2ecc71' : (p.id === myId ? '#3498db' : '#7f8c8d');
         ctx.beginPath(); ctx.arc(pos.x, pos.y, 15, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '14px Arial';
-        ctx.fillText(p.name, pos.x, pos.y - 25);
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '14px Arial'; ctx.fillText(p.name, pos.x, pos.y - 25);
         ctx.fillStyle = '#f1c40f'; ctx.fillText(p.score + 'pt', pos.x, pos.y + 35);
     });
-
-    // 手札描画
     if(gameState.phase === 'PLAYING') {
-        const cardW = 100, cardH = 140, margin = 10;
-        const startX = gameW/2 - (cardW*5+margin*4)/2;
+        const cardW = 100, cardH = 140, margin = 10; const startX = gameW/2 - (cardW*5+margin*4)/2;
         myHand.forEach((c, i) => {
-            const x = startX + i*(cardW+margin);
-            const y = canvas.height - 160 + (selectedCardIndex === i ? -20 : 0);
+            const x = startX + i*(cardW+margin); const y = canvas.height - 160 + (selectedCardIndex === i ? -20 : 0);
             ctx.fillStyle = '#1a1a1a'; ctx.strokeStyle = c.color; ctx.lineWidth = (hoveredCardIndex === i ? 4 : 2);
             ctx.fillRect(x, y, cardW, cardH); ctx.strokeRect(x, y, cardW, cardH);
             ctx.fillStyle = c.color; ctx.font = 'bold 12px Arial'; ctx.fillText(c.type, x + cardW/2, y + 20);
             ctx.fillStyle = '#fff'; ctx.font = '11px Arial'; ctx.fillText(c.name, x + cardW/2, y + 50);
         });
-        if(selectedCardIndex !== -1 && myState === 'SELECTING') {
-            ctx.fillStyle = '#d35400'; ctx.fillRect(gameW/2-60, canvas.height-220, 120, 30);
-            ctx.fillStyle = '#fff'; ctx.fillText("決定", gameW/2, canvas.height-200);
-        }
+        if(selectedCardIndex !== -1 && myState === 'SELECTING') { ctx.fillStyle = '#d35400'; ctx.fillRect(gameW/2-60, canvas.height-220, 120, 30); ctx.fillStyle = '#fff'; ctx.fillText("決定", gameW/2, canvas.height-200); }
     }
-
-    // エフェクト描画
     for(let i=activeParticles.length-1; i>=0; i--){
-        let p = activeParticles[i]; p.progress += 0.02;
-        if(p.progress >= 1) { activeParticles.splice(i,1); continue; }
-        let cx = p.startX + (p.targetX-p.startX)*p.progress;
-        let cy = p.startY + (p.targetY-p.startY)*p.progress;
+        let p = activeParticles[i]; p.progress += 0.02; if(p.progress >= 1) { activeParticles.splice(i,1); continue; }
+        let cx = p.startX + (p.targetX-p.startX)*p.progress; let cy = p.startY + (p.targetY-p.startY)*p.progress;
         ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI*2); ctx.fill();
     }
-
-    if(gameState.phase === 'RESULT') {
-        ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0,0,gameW,canvas.height);
-        ctx.fillStyle = '#f1c40f'; ctx.font = '40px Arial'; ctx.fillText("GAME OVER", gameW/2, canvas.height/2);
-    }
-
+    if(gameState.phase === 'RESULT') { ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0,0,gameW,canvas.height); ctx.fillStyle = '#f1c40f'; ctx.font = '40px Arial'; ctx.fillText("GAME OVER", gameW/2, canvas.height/2); }
     requestAnimationFrame(gameLoop);
 }
 
 function updateLeaderboard() {
-    const list = document.getElementById('leaderboard');
-    list.innerHTML = '';
+    const list = document.getElementById('leaderboard'); list.innerHTML = '';
     [...players].sort((a,b)=>b.score-a.score).forEach((p, i) => {
-        let li = document.createElement('li');
-        if(p.id === myId) li.className = 'my-score';
-        li.innerText = `${i+1}. ${p.name}: ${p.score}pt ${p.status === 'ready' ? '✓' : ''}`;
-        list.appendChild(li);
+        let li = document.createElement('li'); if(p.id === myId) li.className = 'my-score';
+        li.innerText = `${i+1}. ${p.name}: ${p.score}pt ${p.status === 'ready' ? '✓' : ''}`; list.appendChild(li);
     });
 }
 
 canvas.addEventListener('mousemove', e => {
-    const gameW = canvas.width - 300;
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    hoveredCardIndex = -1;
-    if(my > canvas.height - 180 && mx < gameW) {
-        const cardW = 110;
-        const startX = gameW/2 - (cardW*5)/2;
-        const idx = Math.floor((mx - startX) / cardW);
+    const gameW = canvas.width - 300; const rect = canvas.getBoundingClientRect(); const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    hoveredCardIndex = -1; if(my > canvas.height - 180 && mx < gameW) {
+        const cardW = 110; const startX = gameW/2 - (cardW*5)/2; const idx = Math.floor((mx - startX) / cardW);
         if(idx >= 0 && idx < 5) hoveredCardIndex = idx;
     }
 });
 
 canvas.addEventListener('click', async e => {
     if(myState !== 'SELECTING') return;
-    const gameW = canvas.width - 300;
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    
+    const gameW = canvas.width - 300; const rect = canvas.getBoundingClientRect(); const mx = e.clientX - rect.left, my = e.clientY - rect.top;
     if(hoveredCardIndex !== -1) selectedCardIndex = hoveredCardIndex;
-    
-    // 決定ボタンクリック
     if(selectedCardIndex !== -1 && mx > gameW/2-60 && mx < gameW/2+60 && my > canvas.height-220 && my < canvas.height-190) {
-        myState = 'WAITING';
-        await updateDoc(roomRef, {
-            [`playerStatus.${myId}`]: 'ready',
-            [`playerCard.${myId}`]: myHand[selectedCardIndex].id
-        });
+        myState = 'WAITING'; await updateDoc(roomRef, { [`playerStatus.${myId}`]: 'ready', [`playerCard.${myId}`]: myHand[selectedCardIndex].id });
     }
 });
 </script>
