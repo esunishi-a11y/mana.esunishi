@@ -3,446 +3,787 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>マナ・サイクル・コロシアム - Ver 1.4 (Stable)</title>
+    <title>マナ・サイクル・コロシアム - P2P Edition</title>
+    <!-- PeerJS for WebRTC connectivity -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; color: #fff; user-select: none; }
-        #login-screen { color: #33ff33; text-shadow: 0 0 5px #33ff33; padding: 30px; max-width: 600px; margin: 50px auto; border: 2px solid #33ff33; background: #051505; box-shadow: 0 0 20px rgba(51, 255, 51, 0.2); }
-        #login-screen h1 { text-align: center; border-bottom: 1px dashed #33ff33; padding-bottom: 10px; }
-        .input-group { margin: 20px 0; }
-        input[type="text"] { background: #000; color: #33ff33; border: 1px solid #33ff33; padding: 8px; font-family: inherit; width: calc(100% - 20px); font-size: 16px; }
-        button { background: #000; color: #33ff33; border: 1px solid #33ff33; padding: 10px 20px; font-family: inherit; font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.2s; width: 100%; margin-bottom: 10px; }
-        button:hover:not(:disabled) { background: #33ff33; color: #000; }
-        button:disabled { border-color: #555; color: #555; cursor: not-allowed; opacity: 0.5; }
-        #connection-log { margin-top: 20px; height: 120px; overflow-y: auto; font-size: 14px; border-top: 1px dashed #33ff33; padding-top: 10px; background: rgba(0,0,0,0.2); }
-        #game-screen { display: none; width: 100vw; height: 100vh; position: relative; }
-        #game-canvas { display: block; }
-        #ui-panel { position: absolute; right: 0; top: 0; width: 300px; height: 100%; background: rgba(10, 5, 0, 0.95); border-left: 2px solid #5c4033; display: flex; flex-direction: column; box-shadow: -5px 0 15px rgba(0,0,0,0.8); }
-        #ui-panel h3 { margin: 0; padding: 15px; font-size: 18px; color: #e6c200; border-bottom: 1px solid #5c4033; background: rgba(0,0,0,0.5); }
-        #lobby-controls { padding: 15px; border-bottom: 1px solid #5c4033; }
-        .list-container { flex: 1; overflow-y: auto; padding: 10px; margin: 0; list-style: none; }
-        #leaderboard li { margin-bottom: 8px; font-size: 16px; color: #ddd; }
-        #leaderboard .my-score { color: #f1c40f; font-weight: bold; text-shadow: 0 0 5px #f1c40f; }
-        #action-log { border-top: 2px solid #5c4033; flex: 1.5; }
-        #action-log li { margin-bottom: 6px; font-size: 13px; color: #aaa; line-height: 1.4; border-bottom: 1px solid #222; padding-bottom: 2px; }
+        :root {
+            --bg-color: #0a0500;
+            --accent-gold: #e6c200;
+            --terminal-green: #33ff33;
+            --panel-bg: rgba(20, 10, 5, 0.95);
+            --border-color: #5c4033;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: var(--bg-color);
+            font-family: 'Courier New', Courier, monospace;
+            color: #fff;
+            user-select: none;
+        }
+
+        /* Login Screen Styles */
+        #login-screen {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle, #1a1005 0%, #000 100%);
+            z-index: 100;
+        }
+
+        .login-box {
+            background: #051505;
+            border: 2px solid var(--terminal-green);
+            padding: 40px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 0 30px rgba(51, 255, 51, 0.15);
+            color: var(--terminal-green);
+        }
+
+        .login-box h1 {
+            text-align: center;
+            margin-top: 0;
+            font-size: 24px;
+            border-bottom: 1px dashed var(--terminal-green);
+            padding-bottom: 15px;
+        }
+
+        .input-group { margin: 25px 0; }
+        .input-group label { display: block; margin-bottom: 8px; font-size: 14px; }
+
+        input[type="text"] {
+            background: #000;
+            color: var(--terminal-green);
+            border: 1px solid var(--terminal-green);
+            padding: 12px;
+            width: 100%;
+            box-sizing: border-box;
+            font-family: inherit;
+            font-size: 18px;
+            outline: none;
+        }
+
+        button {
+            background: #000;
+            color: var(--terminal-green);
+            border: 1px solid var(--terminal-green);
+            padding: 12px;
+            width: 100%;
+            font-family: inherit;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background: var(--terminal-green);
+            color: #000;
+        }
+
+        #connection-log {
+            margin-top: 20px;
+            height: 100px;
+            overflow-y: auto;
+            font-size: 12px;
+            border-top: 1px solid rgba(51, 255, 51, 0.3);
+            padding-top: 10px;
+        }
+
+        /* Game UI Layout */
+        #game-screen {
+            display: none;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+        }
+
+        #canvas-container {
+            flex: 1;
+            position: relative;
+            background: #000;
+        }
+
+        canvas { display: block; cursor: crosshair; }
+
+        #ui-panel {
+            width: 320px;
+            background: var(--panel-bg);
+            border-left: 2px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            z-index: 10;
+        }
+
+        .panel-section {
+            padding: 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .panel-section h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: var(--accent-gold);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .list-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px 15px;
+            list-style: none;
+            margin: 0;
+            font-size: 14px;
+        }
+
+        #leaderboard li {
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .my-score { color: var(--accent-gold); text-shadow: 0 0 8px rgba(230, 194, 0, 0.5); }
+
+        #action-log {
+            background: rgba(0,0,0,0.3);
+            font-size: 12px;
+            color: #ccc;
+        }
+
+        .log-entry { margin-bottom: 6px; line-height: 1.4; border-left: 2px solid var(--border-color); padding-left: 8px; }
+        .log-turn { color: #2ecc71; font-weight: bold; margin-top: 10px; }
+
+        /* Status Badges */
+        .badge {
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            background: #444;
+        }
+        .badge-ready { background: #27ae60; }
+
+        #lobby-controls {
+            padding: 20px;
+            background: rgba(230, 194, 0, 0.1);
+        }
+
+        .room-id-display {
+            font-size: 24px;
+            color: var(--accent-gold);
+            text-align: center;
+            font-weight: bold;
+            margin: 10px 0;
+            letter-spacing: 3px;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); }
     </style>
 </head>
 <body>
 
+<!-- Login / Peer Setup -->
 <div id="login-screen">
-    <h1>マナ・サイクル・コロシアム Ver 1.4</h1>
-    <div id="connection-log">
-        <div>> SYSTEM: STANDBY...</div>
-    </div>
-    <div class="input-group">
-        <div>> ENTER USERNAME:</div>
-        <input type="text" id="username" value="Player">
-    </div>
-    <button id="btn-host" disabled>部屋を作る</button>
-    <div class="input-group" style="margin-top: 20px;">
-        <div>> JOIN ROOM ID:</div>
-        <input type="text" id="room-id" placeholder="EX: A1B2C3">
-    </div>
-    <button id="btn-join" disabled>部屋に入る</button>
-</div>
-
-<div id="game-screen">
-    <canvas id="game-canvas"></canvas>
-    <div id="ui-panel">
-        <div id="lobby-controls" style="display: none;">
-            <div style="color: #2ecc71; font-weight: bold; margin-bottom: 5px;">> LOBBY STAGE</div>
-            <div style="margin-bottom: 10px;">ROOM ID: <span id="display-room-id" style="color:#f1c40f; font-size:18px;"></span></div>
-            <button id="btn-start-game">ゲーム開始</button>
+    <div class="login-box">
+        <h1>MANA CYCLE COLOSSEUM</h1>
+        
+        <div class="input-group">
+            <label>> USERNAME</label>
+            <input type="text" id="username" value="MAGE_UNIT_01" maxlength="12">
         </div>
-        <h3>🏆 順位表</h3>
-        <ul id="leaderboard" class="list-container"></ul>
-        <h3>📜 アクションログ</h3>
-        <ul id="action-log" class="list-container"></ul>
+
+        <div id="host-controls">
+            <button id="btn-host">CREATE NEW ARENA (HOST)</button>
+        </div>
+
+        <div style="text-align: center; margin: 15px 0; opacity: 0.5;">- OR -</div>
+
+        <div class="input-group">
+            <label>> ARENA ID</label>
+            <input type="text" id="room-id" placeholder="ENTER ID...">
+            <button id="btn-join" style="margin-top: 10px;">JOIN ARENA (CLIENT)</button>
+        </div>
+
+        <div id="connection-log">
+            <div>> SYSTEM READY.</div>
+        </div>
     </div>
 </div>
 
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+<!-- Main Game View -->
+<div id="game-screen" style="display: none;">
+    <div id="canvas-container">
+        <canvas id="game-canvas"></canvas>
+    </div>
 
-// --- Configuration ---
-const config = (typeof __firebase_config !== 'undefined' && __firebase_config) ? JSON.parse(__firebase_config) : {
-    /* GitHub Pages等で動かす場合はここに自分のFirebase設定を貼る */
-    /* apiKey: "...", authDomain: "...", ... */
-};
+    <div id="ui-panel">
+        <div id="lobby-header" class="panel-section" style="display: none;">
+            <h3>Arena Standby</h3>
+            <div class="room-id-display" id="display-room-id">---</div>
+            <button id="btn-start-game" style="display: none; border-color: var(--accent-gold); color: var(--accent-gold);">START BATTLE</button>
+            <div id="waiting-msg" style="font-size: 12px; text-align: center; margin-top: 10px; color: #888;">Waiting for Host...</div>
+        </div>
 
-let auth, db, appId = typeof __app_id !== 'undefined' ? __app_id : 'mana-cycle-col-v14';
+        <div class="panel-section">
+            <h3>Leaderboard</h3>
+            <ul id="leaderboard" class="list-container"></ul>
+        </div>
+
+        <div class="panel-section" style="flex: 1; display: flex; flex-direction: column;">
+            <h3>Battle Records</h3>
+            <ul id="action-log" class="list-container"></ul>
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * Game Configuration & Database
+ */
+const CARDS = [
+    { id: 'c1', name: "Knight's Strike", type: "ATK", color: "#e74c3c", desc: "ランダムな相手から250pt奪う", 
+      effect: (user, ps, logs, parts) => {
+        let targets = ps.filter(p => p.id !== user.id && p.score > 0);
+        if(targets.length > 0) {
+            let t = targets[Math.floor(Math.random() * targets.length)];
+            if(t.isDefending) {
+                logs.push(`${user.name}の攻撃! しかし${t.name}のシールドが火花を散らして防いだ!`);
+            } else {
+                const amt = Math.min(t.score, 250);
+                t.score -= amt; user.score += amt;
+                logs.push(`${user.name}の強撃! ${t.name}から${amt}ptを強奪。`);
+                parts.push({from: t.id, to: user.id, color: '#e74c3c'});
+            }
+        }
+    }},
+    { id: 'c2', name: "Holy Barrier", type: "DEF", color: "#3498db", desc: "このターンのあらゆる干渉を遮断する", 
+      effect: () => {} 
+    },
+    { id: 'c3', name: "Mana Siphon", type: "MAG", color: "#9b59b6", desc: "全生存者から100ptずつ吸収する", 
+      effect: (user, ps, logs, parts) => {
+        let total = 0;
+        ps.forEach(p => {
+            if(p.id !== user.id && p.score > 0) {
+                if(!p.isDefending) {
+                    const amt = Math.min(p.score, 100);
+                    p.score -= amt; total += amt;
+                    parts.push({from: p.id, to: user.id, color: '#9b59b6'});
+                }
+            }
+        });
+        user.score += total;
+        logs.push(`${user.name}の魔力吸引! 計${total}ptを自身の糧とした。`);
+    }},
+    { id: 'c4', name: "Cycle Burst", type: "ATK", color: "#f39c12", desc: "両隣のプレイヤーから150ptずつ奪う", 
+      effect: (user, ps, logs, parts) => {
+        let idx = ps.findIndex(p => p.id === user.id);
+        [ (idx - 1 + ps.length) % ps.length, (idx + 1) % ps.length ].forEach(tIdx => {
+            let t = ps[tIdx];
+            if(t && t.id !== user.id) {
+                if(t.isDefending) {
+                    logs.push(`${t.name}は衝撃波を防御した。`);
+                } else {
+                    const amt = Math.min(t.score, 150);
+                    t.score -= amt; user.score += amt;
+                    logs.push(`${user.name}のバースト! ${t.name}から${amt}ptを奪取。`);
+                    parts.push({from: t.id, to: user.id, color: '#f39c12'});
+                }
+            }
+        });
+    }}
+];
+
+/**
+ * P2P Connectivity Logic
+ */
+let peer = null;
 let myId = '';
 let isHost = false;
-let roomRef = null;
-let localLogCount = 0;
-let gameState = null;
+let hostConn = null;
+let connections = [];
 let players = [];
-let myHand = [];
-let myState = 'SELECTING';
+let gamePhase = 'LOBBY'; 
 let currentRound = 0;
-let lastRound = 0;
-let lastResolveId = null;
+const MAX_ROUNDS = 8;
+
+// Client Local State
+let myHand = [];
+let myState = 'IDLE'; 
+let selectedCardIndex = -1;
 
 function logCLI(msg) {
     const el = document.getElementById('connection-log');
-    if(!el) return;
     const div = document.createElement('div');
-    div.innerHTML = '> ' + msg;
+    div.innerText = `> ${msg}`;
     el.appendChild(div);
     el.scrollTop = el.scrollHeight;
 }
 
-const initApp = async () => {
-    // 設定が空でも、ボタンを有効化して「あとでエラーが出る」形にする（初期化でフリーズさせない）
-    const h = document.getElementById('btn-host');
-    const j = document.getElementById('btn-join');
-    
-    if (!config.apiKey && typeof __firebase_config === 'undefined') {
-        logCLI("<span style='color:orange;'>WARNING: Firebase設定が見つかりません。外部環境では設定をソースに貼り付けてください。</span>");
-        h.disabled = false; j.disabled = false; // 強制アンロック
-        return;
-    }
-
-    try {
-        const firebaseApp = initializeApp(config);
-        auth = getAuth(firebaseApp);
-        db = getFirestore(firebaseApp);
-
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                myId = user.uid;
-                logCLI(`SYSTEM: AUTH SUCCESS [${myId.substring(0,6)}]`);
-                h.disabled = false; j.disabled = false;
-            }
-        });
-
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-            await signInAnonymously(auth);
-        }
-    } catch (e) {
-        logCLI("BOOT ERROR: " + e.message);
-        h.disabled = false; j.disabled = false;
-    }
-};
-
-initApp();
-
-// --- カードデータ ---
-const CARDS = [
-    { id: 'c1', name: "Knight's Strike", type: "ATK", color: "#e74c3c" },
-    { id: 'c2', name: "Holy Barrier", type: "DEF", color: "#3498db" },
-    { id: 'c3', name: "Mage's Transfer", type: "MAG", color: "#9b59b6" },
-    { id: 'c4', name: "Mana Drain", type: "MAG", color: "#8e44ad" },
-    { id: 'c5', name: "Quick Slash", type: "ATK", color: "#c0392b" }
-];
-
-const CARD_EFFECTS = {
-    'c1': (u, ps, logs, parts) => {
-        let targets = ps.filter(p => p.id !== u.id);
-        if(targets.length > 0){
-            let t = targets[Math.floor(Math.random() * targets.length)];
-            if(t.isDefending) logs.push(`${u.name}の攻撃! ${t.name}に防がれた!`);
-            else { t.score -= 200; u.score += 200; logs.push(`${u.name}は${t.name}から200pt奪った!`); parts.push({from: t.id, to: u.id, color: '#e74c3c'}); }
-        }
-    },
-    'c3': (u, ps, logs, parts) => {
-        let targets = ps.filter(p => p.id !== u.id);
-        if(targets.length > 0){
-            let t = targets[Math.floor(Math.random() * targets.length)];
-            if(t.isDefending) logs.push(`${u.name}の魔術! ${t.name}は防御中。`);
-            else { let avg = Math.floor((u.score + t.score) / 2); u.score = avg; t.score = avg; logs.push(`${u.name}と${t.name}が同調した。`); parts.push({from: u.id, to: t.id, color: '#9b59b6'}); }
-        }
-    },
-    'c4': (u, ps, logs, parts) => {
-        let total = 0;
-        ps.forEach(p => { if(p.id !== u.id && !p.isDefending){ p.score -= 50; total += 50; parts.push({from: p.id, to: u.id, color: '#8e44ad'}); }});
-        u.score += total; logs.push(`${u.name}は全員から${total}pt吸収した!`);
-    },
-    'c5': (u, ps, logs, parts) => {
-        let idx = ps.findIndex(p => p.id === u.id);
-        let t = ps[(idx + 1) % ps.length];
-        if(t && t.id !== u.id){
-            if(t.isDefending) logs.push(`${u.name}の斬撃! ${t.name}は防御した。`);
-            else { t.score -= 300; u.score += 300; logs.push(`${u.name}は右隣の${t.name}から300pt奪った!`); parts.push({from: t.id, to: u.id, color: '#c0392b'}); }
-        }
-    }
-};
-
-// --- 通信ロジック ---
-async function setupRoom(roomId, asHost) {
-    if(!db) { alert("Firebaseが接続されていません。設定を確認してください。"); return; }
-    if(!myId) myId = crypto.randomUUID();
-    isHost = asHost;
-    roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'mana_cycle_rooms', roomId);
-    
-    const snap = await getDoc(roomRef);
-    const name = document.getElementById('username').value || 'Unknown';
-
-    if (asHost) {
-        await setDoc(roomRef, {
-            hostId: myId, phase: 'LOBBY', currentRound: 0,
-            players: { [myId]: { name, score: 1000, isDefending: false } },
-            playerStatus: { [myId]: 'ready' },
-            playerCard: { [myId]: null },
-            hands: {}, logs: [`WELCOME TO ${roomId}`], resolveId: 'init'
-        });
-    } else {
-        if (!snap.exists()) { alert("部屋が見つかりません"); return; }
-        const data = snap.data();
-        const updates = {};
-        // 既存プレイヤーならスコアを維持、新規なら1000pt
-        if(!data.players[myId]) {
-            updates[`players.${myId}`] = { name, score: 1000, isDefending: false };
-        }
-        updates[`playerStatus.${myId}`] = data.phase === 'LOBBY' ? 'ready' : 'thinking';
-        await updateDoc(roomRef, updates);
-    }
-
-    listenToRoom();
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('game-screen').style.display = 'block';
-    if(isHost) document.getElementById('lobby-controls').style.display = 'block';
-    document.getElementById('display-room-id').innerText = roomId;
-    resizeCanvas();
-    requestAnimationFrame(gameLoop);
+function generateId() {
+    return Math.random().toString(36).substr(2, 5).toUpperCase();
 }
 
-function listenToRoom() {
-    onSnapshot(roomRef, (snap) => {
-        if (!snap.exists()) return;
-        gameState = snap.data();
-        currentRound = gameState.currentRound;
+// Event Listeners for UI
+document.getElementById('btn-host').addEventListener('click', () => {
+    const name = document.getElementById('username').value || 'Unknown';
+    isHost = true;
+    initPeer(name);
+});
 
-        players = Object.keys(gameState.players).map(id => ({
-            id, ...gameState.players[id],
-            status: gameState.playerStatus[id],
-            playedCardId: gameState.playerCard[id]
-        }));
+document.getElementById('btn-join').addEventListener('click', () => {
+    const name = document.getElementById('username').value || 'Unknown';
+    const roomId = document.getElementById('room-id').value.toUpperCase();
+    if(!roomId) return logCLI("ERROR: ROOM ID REQUIRED.");
+    isHost = false;
+    initPeer(name, roomId);
+});
 
-        if (gameState.hands && gameState.hands[myId]) {
-            myHand = gameState.hands[myId].map(cid => CARDS.find(c => c.id === cid)).filter(Boolean);
+function initPeer(username, targetRoomId = null) {
+    logCLI("INITIALIZING NETWORK...");
+    peer = new Peer(generateId());
+
+    peer.on('open', id => {
+        myId = id;
+        logCLI(`NODE ONLINE. ID: [${id}]`);
+        
+        if(isHost) {
+            document.getElementById('lobby-header').style.display = 'block';
+            document.getElementById('display-room-id').innerText = id;
+            document.getElementById('btn-start-game').style.display = 'block';
+            players.push({id: myId, name: username, score: 1200, status: 'lobby'});
+            transitionToGame();
+            updateLeaderboard();
+        } else {
+            connectToHost(username, targetRoomId);
         }
+    });
 
-        if (gameState.logs && gameState.logs.length > localLogCount) {
-            const list = document.getElementById('action-log');
-            for (let i = localLogCount; i < gameState.logs.length; i++) {
-                let li = document.createElement('li');
-                li.innerHTML = gameState.logs[i];
-                list.appendChild(li);
+    peer.on('connection', conn => {
+        if(isHost) {
+            conn.on('open', () => {
+                connections.push(conn);
+                conn.on('data', data => handleIncomingData(conn, data));
+            });
+            conn.on('close', () => {
+                players = players.filter(p => p.id !== conn.peer);
+                connections = connections.filter(c => c !== conn);
+                broadcastState();
+                addLog(`SYSTEM: ${conn.peer} disconnected.`);
+            });
+        }
+    });
+
+    peer.on('error', err => {
+        logCLI(`FATAL ERROR: ${err.type}`);
+        console.error(err);
+    });
+}
+
+function connectToHost(username, roomId) {
+    logCLI(`LINKING TO ARENA [${roomId}]...`);
+    hostConn = peer.connect(roomId);
+    
+    hostConn.on('open', () => {
+        logCLI("CONNECTION ESTABLISHED.");
+        hostConn.send({type: 'JOIN', name: username, id: myId});
+        document.getElementById('lobby-header').style.display = 'block';
+        document.getElementById('display-room-id').innerText = roomId;
+        transitionToGame();
+    });
+    
+    hostConn.on('data', data => handleIncomingData(hostConn, data));
+}
+
+function handleIncomingData(conn, data) {
+    if(isHost) {
+        if(data.type === 'JOIN') {
+            if(players.length >= 8 || gamePhase !== 'LOBBY') {
+                conn.send({type: 'ERROR', msg: 'Arena Full/Started'});
+                return;
             }
-            localLogCount = gameState.logs.length;
-            list.scrollTop = list.scrollHeight;
+            players.push({id: data.id, name: data.name, score: 1200, status: 'lobby'});
+            addLog(`SYSTEM: ${data.name} entered the arena.`);
+            broadcastState();
+        } else if (data.type === 'ACTION') {
+            processPlayerAction(data.id, data.card);
         }
-
-        if (gameState.resolveId && gameState.resolveId !== lastResolveId) {
-            lastResolveId = gameState.resolveId;
-            if (gameState.lastParticles) gameState.lastParticles.forEach(p => spawnParticle(p));
-        }
-
-        if (currentRound > lastRound && gameState.phase === 'PLAYING') {
-            lastRound = currentRound;
+    } else {
+        if(data.type === 'STATE_SYNC') {
+            players = data.players;
+            gamePhase = data.phase;
+            currentRound = data.round;
+            updateLeaderboard();
+        } else if (data.type === 'ROUND_START') {
+            myHand = data.hand;
             myState = 'SELECTING';
             selectedCardIndex = -1;
+            addLog(`<div class="log-turn">--- ROUND ${data.round} START ---</div>`);
+        } else if (data.type === 'ROUND_RESOLVE') {
+            players = data.players;
+            data.logs.forEach(l => addLog(l));
+            triggerEffects(data.effects);
+            updateLeaderboard();
         }
-
-        updateLeaderboard();
-        calculatePositions();
-
-        // 進行判定: プレイヤーが一人でもいて、全員が準備完了なら次へ
-        if (isHost && gameState.phase === 'PLAYING') {
-            const currentPlayers = Object.keys(gameState.players);
-            if (currentPlayers.length > 0 && currentPlayers.every(pid => gameState.playerStatus[pid] === 'ready')) {
-                resolveRound();
-            }
-        }
-    }, (err) => logCLI("SYNC ERROR: " + err.message));
+    }
 }
 
-async function startRound() {
-    let nextRound = gameState.currentRound + 1;
-    let updates = {
-        phase: 'PLAYING', currentRound: nextRound,
-        logs: arrayUnion(`--- ROUND ${nextRound} START ---`),
-        lastParticles: []
+function broadcastState() {
+    const msg = {
+        type: 'STATE_SYNC',
+        players: players.map(p => ({id: p.id, name: p.name, score: p.score, status: p.status})),
+        phase: gamePhase,
+        round: currentRound
     };
+    connections.forEach(c => c.send(msg));
+    handleIncomingData(null, msg);
+}
+
+/**
+ * Game Flow Logic
+ */
+document.getElementById('btn-start-game').addEventListener('click', () => {
+    if(!isHost || players.length < 1) return;
+    document.getElementById('btn-start-game').style.display = 'none';
+    startNewRound();
+});
+
+function startNewRound() {
+    currentRound++;
+    gamePhase = 'PLAYING';
+    
     players.forEach(p => {
-        updates[`playerStatus.${p.id}`] = 'thinking';
-        updates[`playerCard.${p.id}`] = null;
-        updates[`players.${p.id}.isDefending`] = false;
-        updates[`hands.${p.id}`] = Array(5).fill(0).map(() => CARDS[Math.floor(Math.random()*CARDS.length)].id);
+        p.status = 'thinking';
+        p.chosenCard = null;
+        const hand = Array.from({length: 4}, () => CARDS[Math.floor(Math.random() * CARDS.length)]);
+        
+        if(p.id === myId) {
+            handleIncomingData(null, {type: 'ROUND_START', hand, round: currentRound});
+        } else {
+            const c = connections.find(conn => conn.peer === p.id);
+            if(c) c.send({type: 'ROUND_START', hand, round: currentRound});
+        }
     });
-    await updateDoc(roomRef, updates);
+    broadcastState();
 }
 
-async function resolveRound() {
-    await updateDoc(roomRef, { phase: 'RESOLVING' });
-    let newLogs = [];
-    let newParts = [];
-    let pData = JSON.parse(JSON.stringify(players));
+function processPlayerAction(pid, card) {
+    let p = players.find(p => p.id === pid);
+    if(p && p.status === 'thinking') {
+        p.status = 'ready';
+        p.chosenCard = card;
+        broadcastState();
+        
+        if(players.every(pl => pl.status === 'ready')) {
+            resolveBattle();
+        }
+    }
+}
 
-    pData.forEach(p => {
-        if(p.playedCardId === 'c2') {
-            p.isDefending = true;
-            newLogs.push(`🛡️ ${p.name}は防御した`);
-            newParts.push({from: p.id, to: p.id, color: '#00ffff', type: 'shield'});
+function resolveBattle() {
+    gamePhase = 'RESOLVING';
+    let logs = [];
+    let effects = [];
+
+    // 1. Initial Defense Check
+    players.forEach(p => {
+        p.isDefending = (p.chosenCard && p.chosenCard.type === 'DEF');
+        if(p.isDefending) {
+            logs.push(`🛡️ ${p.name} activated Holy Barrier.`);
+            effects.push({from: p.id, to: p.id, type: 'shield', color: '#00ffff'});
         }
     });
 
-    pData.forEach(p => {
-        if(p.playedCardId && p.playedCardId !== 'c2') {
-            const fx = CARD_EFFECTS[p.playedCardId];
-            if(fx) fx(p, pData, newLogs, newParts);
+    // 2. Execute Effects
+    players.forEach(p => {
+        if(p.chosenCard && p.chosenCard.type !== 'DEF') {
+            const cardRef = CARDS.find(c => c.id === p.chosenCard.id);
+            if(cardRef) cardRef.effect(p, players, logs, effects);
         }
     });
 
-    let updates = {
-        logs: arrayUnion(...newLogs),
-        lastParticles: newParts,
-        resolveId: Date.now().toString()
+    // 3. Sync Results
+    const resolveMsg = {
+        type: 'ROUND_RESOLVE',
+        players: players.map(p => ({id: p.id, name: p.name, score: p.score})),
+        logs,
+        effects
     };
-    pData.forEach(p => {
-        updates[`players.${p.id}.score`] = p.score;
-        updates[`players.${p.id}.isDefending`] = p.isDefending;
-    });
-
-    await updateDoc(roomRef, updates);
+    
+    connections.forEach(c => c.send(resolveMsg));
+    handleIncomingData(null, resolveMsg);
 
     setTimeout(() => {
-        if (currentRound >= 10) updateDoc(roomRef, { phase: 'RESULT' });
-        else startRound();
+        if(currentRound >= MAX_ROUNDS) {
+            gamePhase = 'END';
+            broadcastState();
+        } else {
+            startNewRound();
+        }
     }, 4000);
 }
 
-// --- ボタンイベント ---
-document.getElementById('btn-host').onclick = () => setupRoom(Math.random().toString(36).substr(2,6).toUpperCase(), true);
-document.getElementById('btn-join').onclick = () => {
-    const id = document.getElementById('room-id').value.toUpperCase();
-    if(id) setupRoom(id, false);
-};
-document.getElementById('btn-start-game').onclick = () => { if(isHost) startRound(); };
-
-// --- Canvas描画ロジック ---
+/**
+ * UI & Graphics
+ */
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
-let playerPositions = {};
 let activeParticles = [];
-let selectedCardIndex = -1;
-let hoveredCardIndex = -1;
+let playerNodes = {};
+
+function transitionToGame() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('game-screen').style.display = 'flex';
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    requestAnimationFrame(renderLoop);
+}
 
 function resizeCanvas() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    calculatePositions();
-}
-window.addEventListener('resize', resizeCanvas);
-
-function calculatePositions() {
-    if(!players.length) return;
-    const gameW = canvas.width - 300;
-    const cx = gameW / 2;
-    const cy = canvas.height / 2 - 40;
-    const r = Math.min(gameW, canvas.height) * 0.3;
-    players.forEach((p, i) => {
-        const ang = -Math.PI/2 + (Math.PI*2/players.length)*i;
-        playerPositions[p.id] = { x: cx + r*Math.cos(ang), y: cy + r*Math.sin(ang) };
-    });
-}
-
-function spawnParticle(p) {
-    const from = playerPositions[p.from];
-    const to = playerPositions[p.to];
-    if(!from || !to) return;
-    activeParticles.push({ ...p, startX: from.x, startY: from.y, targetX: to.x, targetY: to.y, progress: 0 });
-}
-
-function gameLoop() {
-    const gameW = canvas.width - 300;
-    ctx.fillStyle = '#0a0500';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    if(!gameState) { requestAnimationFrame(gameLoop); return; }
-
-    players.forEach(p => {
-        const pos = playerPositions[p.id];
-        if(!pos) return;
-        ctx.fillStyle = p.status === 'ready' ? '#2ecc71' : (p.id === myId ? '#3498db' : '#7f8c8d');
-        ctx.beginPath(); ctx.arc(pos.x, pos.y, 15, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '14px Arial';
-        ctx.fillText(p.name, pos.x, pos.y - 25);
-        ctx.fillStyle = '#f1c40f'; ctx.fillText(p.score + 'pt', pos.x, pos.y + 35);
-    });
-
-    if(gameState.phase === 'PLAYING') {
-        const cardW = 100, cardH = 140, margin = 10;
-        const startX = gameW/2 - (cardW*5+margin*4)/2;
-        myHand.forEach((c, i) => {
-            const x = startX + i*(cardW+margin);
-            const y = canvas.height - 160 + (selectedCardIndex === i ? -20 : 0);
-            ctx.fillStyle = '#1a1a1a'; ctx.strokeStyle = c.color; ctx.lineWidth = (hoveredCardIndex === i ? 4 : 2);
-            ctx.fillRect(x, y, cardW, cardH); ctx.strokeRect(x, y, cardW, cardH);
-            ctx.fillStyle = c.color; ctx.font = 'bold 12px Arial'; ctx.fillText(c.type, x + cardW/2, y + 20);
-            ctx.fillStyle = '#fff'; ctx.font = '11px Arial'; ctx.fillText(c.name, x + cardW/2, y + 50);
-        });
-        if(selectedCardIndex !== -1 && myState === 'SELECTING') {
-            ctx.fillStyle = '#d35400'; ctx.fillRect(gameW/2-60, canvas.height-220, 120, 30);
-            ctx.fillStyle = '#fff'; ctx.fillText("決定", gameW/2, canvas.height-200);
-        }
-    }
-
-    for(let i=activeParticles.length-1; i>=0; i--){
-        let p = activeParticles[i]; p.progress += 0.02;
-        if(p.progress >= 1) { activeParticles.splice(i,1); continue; }
-        let cx = p.startX + (p.targetX-p.startX)*p.progress;
-        let cy = p.startY + (p.targetY-p.startY)*p.progress;
-        ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI*2); ctx.fill();
-    }
-
-    if(gameState.phase === 'RESULT') {
-        ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0,0,gameW,canvas.height);
-        ctx.fillStyle = '#f1c40f'; ctx.font = '40px Arial'; ctx.fillText("GAME OVER", gameW/2, canvas.height/2);
-    }
-    requestAnimationFrame(gameLoop);
+    const container = document.getElementById('canvas-container');
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
 }
 
 function updateLeaderboard() {
     const list = document.getElementById('leaderboard');
-    if(!list) return;
     list.innerHTML = '';
-    [...players].sort((a,b)=>b.score-a.score).forEach((p, i) => {
-        let li = document.createElement('li');
+    [...players].sort((a,b) => b.score - a.score).forEach((p, i) => {
+        const li = document.createElement('li');
         if(p.id === myId) li.className = 'my-score';
-        li.innerText = `${i+1}. ${p.name}: ${p.score}pt ${p.status === 'ready' ? '✓' : ''}`;
+        const readyIcon = p.status === 'ready' ? '<span class="badge badge-ready">READY</span>' : '';
+        li.innerHTML = `<span>${i+1}. ${p.name}</span> <span>${p.score}pt ${readyIcon}</span>`;
         list.appendChild(li);
     });
 }
 
-canvas.addEventListener('mousemove', e => {
-    const gameW = canvas.width - 300;
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    hoveredCardIndex = -1;
-    if(my > canvas.height - 180 && mx < gameW) {
-        const cardW = 110;
-        const startX = gameW/2 - (cardW*5)/2;
-        const idx = Math.floor((mx - startX) / cardW);
-        if(idx >= 0 && idx < 5) hoveredCardIndex = idx;
+function addLog(msg) {
+    const list = document.getElementById('action-log');
+    const li = document.createElement('div');
+    li.className = 'log-entry';
+    li.innerHTML = msg;
+    list.appendChild(li);
+    list.scrollTop = list.scrollHeight;
+}
+
+function triggerEffects(effs) {
+    effs.forEach(e => {
+        activeParticles.push({
+            fromId: e.from,
+            toId: e.to,
+            color: e.color,
+            type: e.type || 'bolt',
+            progress: 0,
+            speed: 0.02 + Math.random() * 0.01
+        });
+    });
+}
+
+function renderLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Background Magic Circle
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2 - 40;
+    const radius = Math.min(cx, cy) * 0.7;
+
+    ctx.strokeStyle = 'rgba(92, 64, 51, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, radius * 0.95, 0, Math.PI*2); ctx.stroke();
+
+    // Draw Players in Circle
+    playerNodes = {};
+    players.forEach((p, i) => {
+        const angle = (i / players.length) * Math.PI * 2 - Math.PI / 2;
+        const px = cx + Math.cos(angle) * radius;
+        const py = cy + Math.sin(angle) * radius;
+        playerNodes[p.id] = {x: px, y: py};
+
+        // Node Visual
+        ctx.fillStyle = p.id === myId ? '#3498db' : (p.status === 'ready' ? '#2ecc71' : '#5c4033');
+        ctx.shadowBlur = p.status === 'ready' ? 15 : 0;
+        ctx.shadowColor = ctx.fillStyle;
+        
+        ctx.beginPath();
+        ctx.moveTo(px, py - 15); ctx.lineTo(px + 15, py); 
+        ctx.lineTo(px, py + 15); ctx.lineTo(px - 15, py);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Name & Score
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(p.name, px, py - 25);
+        ctx.fillStyle = varColor('--accent-gold');
+        ctx.fillText(`${p.score}pt`, px, py + 30);
+    });
+
+    // Particles
+    activeParticles = activeParticles.filter(p => {
+        const start = playerNodes[p.fromId];
+        const end = playerNodes[p.toId];
+        if(!start || !end) return false;
+
+        p.progress += p.speed;
+        if(p.progress >= 1) return false;
+
+        const curX = start.x + (end.x - start.x) * p.progress;
+        const curY = start.y + (end.y - start.y) * p.progress;
+
+        if(p.type === 'shield') {
+            ctx.strokeStyle = p.color;
+            ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(start.x, start.y, 25 + Math.sin(p.progress * 10) * 5, 0, Math.PI*2);
+            ctx.globalAlpha = 1 - p.progress;
+            ctx.stroke();
+            ctx.globalAlpha = 1.0;
+        } else {
+            ctx.fillStyle = p.color;
+            ctx.shadowBlur = 10; ctx.shadowColor = p.color;
+            ctx.beginPath(); ctx.arc(curX, curY, 5, 0, Math.PI*2); ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+        return true;
+    });
+
+    // Draw Hand
+    if(gamePhase === 'PLAYING' && myState === 'SELECTING') {
+        renderHand();
+    } else if (myState === 'WAITING') {
+        ctx.fillStyle = '#fff';
+        ctx.font = '20px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText("TRANSMITTING ACTION...", cx, canvas.height - 100);
     }
+
+    if(gamePhase === 'END') {
+        ctx.fillStyle = 'rgba(0,0,0,0.8)';
+        ctx.fillRect(0,0,canvas.width, canvas.height);
+        ctx.fillStyle = varColor('--accent-gold');
+        ctx.font = 'bold 40px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText("BATTLE CONCLUDED", cx, cy);
+    }
+
+    requestAnimationFrame(renderLoop);
+}
+
+function renderHand() {
+    const cardW = 120;
+    const cardH = 160;
+    const totalW = myHand.length * (cardW + 15);
+    const startX = (canvas.width - totalW) / 2;
+    const y = canvas.height - cardH - 30;
+
+    myHand.forEach((card, i) => {
+        const x = startX + i * (cardW + 15);
+        const isHover = mouseX >= x && mouseX <= x+cardW && mouseY >= y && mouseY <= y+cardH;
+        const isSelected = selectedCardIndex === i;
+
+        ctx.fillStyle = isSelected ? '#331a00' : '#1a0d00';
+        ctx.strokeStyle = isSelected ? varColor('--accent-gold') : card.color;
+        ctx.lineWidth = isSelected ? 4 : 2;
+
+        const drawY = isHover || isSelected ? y - 15 : y;
+        
+        ctx.fillRect(x, drawY, cardW, cardH);
+        ctx.strokeRect(x, drawY, cardW, cardH);
+
+        ctx.fillStyle = card.color;
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`[${card.type}]`, x + cardW/2, drawY + 25);
+        
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 13px Arial';
+        drawText(card.name, x + cardW/2, drawY + 55, cardW - 10);
+        
+        ctx.font = '10px Arial';
+        ctx.fillStyle = '#aaa';
+        drawText(card.desc, x + cardW/2, drawY + 90, cardW - 10);
+
+        if(isSelected) {
+            ctx.fillStyle = varColor('--accent-gold');
+            ctx.fillRect(x, drawY + cardH + 5, cardW, 25);
+            ctx.fillStyle = '#000';
+            ctx.font = 'bold 12px Arial';
+            ctx.fillText("CAST SPELL", x + cardW/2, drawY + cardH + 22);
+        }
+    });
+}
+
+function drawText(text, x, y, max) {
+    const words = text.split('');
+    let line = '';
+    let currY = y;
+    for(let n=0; n<words.length; n++) {
+        let test = line + words[n];
+        if(ctx.measureText(test).width > max) {
+            ctx.fillText(line, x, currY);
+            line = words[n];
+            currY += 14;
+        } else {
+            line = test;
+        }
+    }
+    ctx.fillText(line, x, currY);
+}
+
+function varColor(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+let mouseX = 0, mouseY = 0;
+canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
 });
 
-canvas.addEventListener('click', async e => {
-    if(myState !== 'SELECTING') return;
-    const gameW = canvas.width - 300;
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    if(hoveredCardIndex !== -1) selectedCardIndex = hoveredCardIndex;
-    if(selectedCardIndex !== -1 && mx > gameW/2-60 && mx < gameW/2+60 && my > canvas.height-220 && my < canvas.height-190) {
-        myState = 'WAITING';
-        await updateDoc(roomRef, { [`playerStatus.${myId}`]: 'ready', [`playerCard.${myId}`]: myHand[selectedCardIndex].id });
-    }
+canvas.addEventListener('mousedown', e => {
+    if(gamePhase !== 'PLAYING' || myState !== 'SELECTING') return;
+
+    const cardW = 120;
+    const cardH = 160;
+    const totalW = myHand.length * (cardW + 15);
+    const startX = (canvas.width - totalW) / 2;
+    const y = canvas.height - cardH - 30;
+
+    myHand.forEach((_, i) => {
+        const x = startX + i * (cardW + 15);
+        // Check Selection
+        if(mouseX >= x && mouseX <= x+cardW && mouseY >= y && mouseY <= y+cardH) {
+            selectedCardIndex = i;
+        }
+        // Check "Cast" button click
+        if(selectedCardIndex === i && mouseX >= x && mouseX <= x+cardW && mouseY >= y+cardH+5 && mouseY <= y+cardH+30) {
+            confirmAction();
+        }
+    });
 });
+
+function confirmAction() {
+    const card = myHand[selectedCardIndex];
+    myState = 'WAITING';
+    if(isHost) {
+        processPlayerAction(myId, card);
+    } else {
+        hostConn.send({type: 'ACTION', id: myId, card: card});
+    }
+}
 </script>
 </body>
 </html>
