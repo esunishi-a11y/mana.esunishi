@@ -314,6 +314,7 @@ let isHost = false;
 let hostConn = null;
 let connections = [];
 let players = [];
+let battleRecords = []; // 共有用ログ配列
 let gamePhase = 'LOBBY'; 
 let currentRound = 0;
 const MAX_ROUNDS = 8;
@@ -374,12 +375,14 @@ function initPeer(username, targetRoomId = null) {
                 connections.push(conn);
                 logCLI(`LINK ESTABLISHED: ${conn.peer}`);
                 conn.on('data', data => handleIncomingData(conn, data));
+                // 新規参加者に現在の状態と過去のログを同期
+                broadcastState();
             });
             conn.on('close', () => {
                 players = players.filter(p => p.id !== conn.peer);
                 connections = connections.filter(c => c !== conn);
                 broadcastState();
-                addLog(`SYSTEM: ${conn.peer} disconnected.`);
+                addLog(`SYSTEM: ${conn.peer} disconnected.`, true);
             });
         }
     });
@@ -410,7 +413,7 @@ function handleIncomingData(conn, data) {
         if(data.type === 'JOIN') {
             if(players.length >= 8 || gamePhase !== 'LOBBY') return;
             players.push({id: data.id, name: data.name, score: 1200, status: 'lobby'});
-            addLog(`SYSTEM: ${data.name} entered the arena.`);
+            addLog(`SYSTEM: ${data.name} entered the arena.`, true);
             broadcastState();
         } else if (data.type === 'ACTION') {
             processPlayerAction(data.id, data.card);
@@ -420,6 +423,12 @@ function handleIncomingData(conn, data) {
             players = data.players;
             gamePhase = data.phase;
             currentRound = data.round;
+            
+            // ログの完全同期
+            if(data.records) {
+                syncActionLogs(data.records);
+            }
+
             if(gamePhase === 'PLAYING') {
                 document.getElementById('lobby-header').style.display = 'none';
             }
@@ -429,10 +438,10 @@ function handleIncomingData(conn, data) {
             myState = 'SELECTING';
             selectedCardIndex = -1;
             document.getElementById('lobby-header').style.display = 'none';
-            addLog(`<div class="log-turn">--- ROUND ${data.round} START ---</div>`);
+            // ラウンド開始はSTATE_SYNCのログに含まれるためここでは個別追加不要
         } else if (data.type === 'ROUND_RESOLVE') {
             players = data.players;
-            data.logs.forEach(l => addLog(l));
+            // 解決ログもSTATE_SYNCで送られてくるが、エフェクトだけ実行
             triggerEffects(data.effects);
             updateLeaderboard();
         }
@@ -444,11 +453,10 @@ function broadcastState() {
         type: 'STATE_SYNC',
         players: players.map(p => ({id: p.id, name: p.name, score: p.score, status: p.status})),
         phase: gamePhase,
-        round: currentRound
+        round: currentRound,
+        records: battleRecords // ログ履歴を同封
     };
     connections.forEach(c => c.send(msg));
-    // Host自身にも反映
-    players = msg.players;
     updateLeaderboard();
 }
 
@@ -457,7 +465,7 @@ function broadcastState() {
  */
 document.getElementById('btn-start-game').addEventListener('click', () => {
     if(!isHost || players.length < 1) return;
-    addLog("SYSTEM: BATTLE INITIATED.");
+    addLog("SYSTEM: BATTLE INITIATED.", true);
     startNewRound();
 });
 
@@ -466,18 +474,26 @@ function startNewRound() {
     gamePhase = 'PLAYING';
     document.getElementById('lobby-header').style.display = 'none';
     
+    addLog(`<div class="log-turn">--- ROUND ${currentRound} START ---</div>`, true);
+
     players.forEach(p => {
         p.status = 'thinking';
         p.chosenCard = null;
         const hand = Array.from({length: 4}, () => CARDS[Math.floor(Math.random() * CARDS.length)]);
         
         if(p.id === myId) {
-            handleIncomingData(null, {type: 'ROUND_START', hand, round: currentRound});
+            // ホスト自身の処理
+            myHand = hand;
+            myState = 'SELECTING';
+            selectedCardIndex = -1;
         } else {
+            // クライアントへ配布
             const c = connections.find(conn => conn.peer === p.id);
             if(c) c.send({type: 'ROUND_START', hand, round: currentRound});
         }
     });
+    
+    // 全員に現在のフェーズとログを同期
     broadcastState();
 }
 
@@ -499,6 +515,7 @@ function resolveBattle() {
     let logs = [];
     let effects = [];
 
+    // 防御判定
     players.forEach(p => {
         p.isDefending = (p.chosenCard && p.chosenCard.type === 'DEF');
         if(p.isDefending) {
@@ -507,6 +524,7 @@ function resolveBattle() {
         }
     });
 
+    // 攻撃・魔法実行
     players.forEach(p => {
         if(p.chosenCard && p.chosenCard.type !== 'DEF') {
             const cardRef = CARDS.find(c => c.id === p.chosenCard.id);
@@ -514,19 +532,25 @@ function resolveBattle() {
         }
     });
 
+    // 結果ログの保存
+    logs.forEach(l => addLog(l, true));
+
     const resolveMsg = {
         type: 'ROUND_RESOLVE',
         players: players.map(p => ({id: p.id, name: p.name, score: p.score})),
-        logs,
         effects
     };
     
     connections.forEach(c => c.send(resolveMsg));
-    handleIncomingData(null, resolveMsg);
+    
+    // ホスト自身のエフェクト実行
+    triggerEffects(effects);
+    broadcastState();
 
     setTimeout(() => {
         if(currentRound >= MAX_ROUNDS) {
             gamePhase = 'END';
+            addLog("SYSTEM: BATTLE CONCLUDED.", true);
             broadcastState();
         } else {
             startNewRound();
@@ -570,13 +594,33 @@ function updateLeaderboard() {
     });
 }
 
-function addLog(msg) {
+// ログ追加（isBroadcastingがtrueなら履歴に追加）
+function addLog(msg, isBroadcasting = false) {
+    if(isBroadcasting) {
+        battleRecords.push(msg);
+        if(battleRecords.length > 50) battleRecords.shift();
+    }
+    
     const list = document.getElementById('action-log');
     if(!list) return;
     const li = document.createElement('div');
     li.className = 'log-entry';
     li.innerHTML = msg;
     list.appendChild(li);
+    list.scrollTop = list.scrollHeight;
+}
+
+// クライアント側でログを同期
+function syncActionLogs(records) {
+    const list = document.getElementById('action-log');
+    if(!list) return;
+    list.innerHTML = ''; // 一旦クリア
+    records.forEach(msg => {
+        const li = document.createElement('div');
+        li.className = 'log-entry';
+        li.innerHTML = msg;
+        list.appendChild(li);
+    });
     list.scrollTop = list.scrollHeight;
 }
 
