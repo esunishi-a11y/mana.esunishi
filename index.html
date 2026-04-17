@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>マナ・サイクル・コロシアム - Ver 1.22</title>
+    <title>マナ・サイクル・コロシアム - Ver 1.3 (Stable)</title>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; color: #fff; user-select: none; }
         #login-screen { color: #33ff33; text-shadow: 0 0 5px #33ff33; padding: 30px; max-width: 600px; margin: 50px auto; border: 2px solid #33ff33; background: #051505; box-shadow: 0 0 20px rgba(51, 255, 51, 0.2); }
@@ -12,11 +12,11 @@
         input[type="text"] { background: #000; color: #33ff33; border: 1px solid #33ff33; padding: 8px; font-family: inherit; width: calc(100% - 20px); font-size: 16px; }
         button { background: #000; color: #33ff33; border: 1px solid #33ff33; padding: 10px 20px; font-family: inherit; font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.2s; width: 100%; margin-bottom: 10px; }
         button:hover:not(:disabled) { background: #33ff33; color: #000; }
-        button:disabled { border-color: #555; color: #555; cursor: not-allowed; text-shadow: none; opacity: 0.5; }
-        #connection-log { margin-top: 20px; height: 120px; overflow-y: auto; font-size: 14px; border-top: 1px dashed #33ff33; padding-top: 10px; background: rgba(0,0,0,0.3); }
+        button:disabled { border-color: #555; color: #555; cursor: not-allowed; opacity: 0.5; }
+        #connection-log { margin-top: 20px; height: 120px; overflow-y: auto; font-size: 14px; border-top: 1px dashed #33ff33; padding-top: 10px; background: rgba(0,0,0,0.2); }
         #game-screen { display: none; width: 100vw; height: 100vh; position: relative; }
         #game-canvas { display: block; }
-        #ui-panel { position: absolute; right: 0; top: 0; width: 300px; height: 100%; background: rgba(10, 5, 0, 0.9); border-left: 2px solid #5c4033; display: flex; flex-direction: column; box-shadow: -5px 0 15px rgba(0,0,0,0.8); }
+        #ui-panel { position: absolute; right: 0; top: 0; width: 300px; height: 100%; background: rgba(10, 5, 0, 0.95); border-left: 2px solid #5c4033; display: flex; flex-direction: column; box-shadow: -5px 0 15px rgba(0,0,0,0.8); }
         #ui-panel h3 { margin: 0; padding: 15px; font-size: 18px; color: #e6c200; border-bottom: 1px solid #5c4033; background: rgba(0,0,0,0.5); }
         #lobby-controls { padding: 15px; border-bottom: 1px solid #5c4033; }
         .list-container { flex: 1; overflow-y: auto; padding: 10px; margin: 0; list-style: none; }
@@ -24,15 +24,14 @@
         #leaderboard .my-score { color: #f1c40f; font-weight: bold; text-shadow: 0 0 5px #f1c40f; }
         #action-log { border-top: 2px solid #5c4033; flex: 1.5; }
         #action-log li { margin-bottom: 6px; font-size: 13px; color: #aaa; line-height: 1.4; border-bottom: 1px solid #222; padding-bottom: 2px; }
-        #action-log li .turn-header { color: #2ecc71; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div id="login-screen">
-    <h1>マナ・サイクル・コロシアム</h1>
+    <h1>マナ・サイクル・コロシアム Ver 1.3</h1>
     <div id="connection-log">
-        <div>> SYSTEM: LOADING MODULES...</div>
+        <div>> SYSTEM: STANDBY...</div>
     </div>
     <div class="input-group">
         <div>> ENTER USERNAME:</div>
@@ -62,33 +61,26 @@
 </div>
 
 <script type="module">
-// --- Global Debug Log ---
-window.logCLI = function(msg) {
-    const el = document.getElementById('connection-log');
-    if (!el) return;
-    const div = document.createElement('div');
-    div.innerHTML = '> ' + msg;
-    el.appendChild(div);
-    el.scrollTop = el.scrollHeight;
-};
-
-logCLI("SYSTEM: CORE INITIALIZED.");
-
-// ボタンを即座に解放するバックアップ（通信がなくてもUIは触れるようにする）
-setTimeout(() => {
-    const bh = document.getElementById('btn-host');
-    if (bh && bh.disabled) {
-        bh.disabled = false;
-        document.getElementById('btn-join').disabled = false;
-        logCLI("SYSTEM: EMERGENCY UI UNLOCK.");
-    }
-}, 2000);
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// --- Global Variables ---
+// --- Configuration Helper ---
+const getFirebaseConfig = () => {
+    // 1. 環境変数チェック (Canvas環境)
+    if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+        try { return JSON.parse(__firebase_config); } catch(e) { console.error(e); }
+    }
+    // 2. 外部サーバー用 (GitHub Pages等で動かす場合はここに自分の設定を貼る)
+    const myCustomConfig = {
+        /* apiKey: "...", authDomain: "...", projectId: "...", ... */
+    };
+    if (myCustomConfig.apiKey) return myCustomConfig;
+    return null;
+};
+
+const config = getFirebaseConfig();
+let auth, db, appId = typeof __app_id !== 'undefined' ? __app_id : 'mana-cycle-col-v13';
 let myId = '';
 let isHost = false;
 let roomRef = null;
@@ -102,25 +94,36 @@ let currentRound = 0;
 let lastRound = 0;
 let lastResolveId = null;
 
-// --- Firebase Initialization ---
-let auth, db, appId;
+function logCLI(msg) {
+    const el = document.getElementById('connection-log');
+    if(!el) return;
+    const div = document.createElement('div');
+    div.innerHTML = '> ' + msg;
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+}
 
-async function bootstrap() {
+// 緊急アンロック (Firebaseが繋がらなくてもUI操作だけは可能にする)
+setTimeout(() => {
+    const h = document.getElementById('btn-host');
+    if(h && h.disabled) {
+        logCLI("<span style='color:orange;'>SYSTEM: OFFLINE MODE / WAIT TIMEOUT</span>");
+        h.disabled = false;
+        document.getElementById('btn-join').disabled = false;
+    }
+}, 3000);
+
+const initApp = async () => {
+    if (!config) {
+        logCLI("<span style='color:red;'>ERROR: FIREBASE CONFIG NOT FOUND.</span>");
+        logCLI("外部サーバーで動かすにはFirebaseの設定が必要です。");
+        return;
+    }
+
     try {
-        logCLI("SYSTEM: CONNECTING TO SERVICES...");
-        
-        // 環境変数チェック
-        const configStr = (typeof __firebase_config !== 'undefined') ? __firebase_config : null;
-        if (!configStr) {
-            logCLI("WARNING: CLOUD CONFIG NOT FOUND. LOCAL MODE?");
-            return;
-        }
-        
-        const config = JSON.parse(configStr);
-        const app = initializeApp(config);
-        auth = getAuth(app);
-        db = getFirestore(app);
-        appId = typeof __app_id !== 'undefined' ? __app_id : 'mana-cycle-col';
+        const firebaseApp = initializeApp(config);
+        auth = getAuth(firebaseApp);
+        db = getFirestore(firebaseApp);
 
         onAuthStateChanged(auth, (user) => {
             if (user) {
@@ -136,24 +139,23 @@ async function bootstrap() {
         } else {
             await signInAnonymously(auth);
         }
-
     } catch (e) {
-        logCLI("ERROR: BOOTSTRAP FAILED - " + e.message);
-        // エラーが出てもボタンは押せるようにする（フォールバック）
+        logCLI("BOOT ERROR: " + e.message);
+        // エラーが出ても入力は許可する
         document.getElementById('btn-host').disabled = false;
         document.getElementById('btn-join').disabled = false;
     }
-}
+};
 
-bootstrap();
+initApp();
 
-// --- カードデータ & ロジック ---
+// --- カードデータ ---
 const CARDS = [
-    { id: 'c1', name: "Knight's Strike", type: "ATK", color: "#e74c3c", desc: "ランダムな相手から200pt奪う" },
-    { id: 'c2', name: "Holy Barrier", type: "DEF", color: "#3498db", desc: "ターン内の減少を防ぐ" },
-    { id: 'c3', name: "Mage's Transfer", type: "MAG", color: "#9b59b6", desc: "ランダムな相手とスコア平均化" },
-    { id: 'c4', name: "Mana Drain", type: "MAG", color: "#8e44ad", desc: "全員から50ptずつ吸収" },
-    { id: 'c5', name: "Quick Slash", type: "ATK", color: "#c0392b", desc: "右隣のプレイヤーから300pt奪う" }
+    { id: 'c1', name: "Knight's Strike", type: "ATK", color: "#e74c3c" },
+    { id: 'c2', name: "Holy Barrier", type: "DEF", color: "#3498db" },
+    { id: 'c3', name: "Mage's Transfer", type: "MAG", color: "#9b59b6" },
+    { id: 'c4', name: "Mana Drain", type: "MAG", color: "#8e44ad" },
+    { id: 'c5', name: "Quick Slash", type: "ATK", color: "#c0392b" }
 ];
 
 const CARD_EFFECTS = {
@@ -190,47 +192,43 @@ const CARD_EFFECTS = {
 
 // --- 通信ロジック ---
 async function setupRoom(roomId, asHost) {
-    if (!db) { alert("データベースに接続できていません。再読み込みしてください。"); return; }
-    if (!myId) myId = crypto.randomUUID();
+    if(!db) { alert("Database not ready."); return; }
+    if(!myId) myId = crypto.randomUUID();
     currentRoomId = roomId;
     isHost = asHost;
     roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'mana_cycle_rooms', roomId);
     
-    try {
-        const snap = await getDoc(roomRef);
-        const name = document.getElementById('username').value || 'Unknown';
+    const snap = await getDoc(roomRef);
+    const name = document.getElementById('username').value || 'Unknown';
 
-        if (asHost) {
-            await setDoc(roomRef, {
-                hostId: myId, phase: 'LOBBY', currentRound: 0,
-                players: { [myId]: { name, score: 1000, isDefending: false } },
-                playerStatus: { [myId]: 'lobby' },
-                playerCard: { [myId]: null },
-                hands: {}, logs: [`<span class="turn-header">WELCOME TO ${roomId}</span>`], resolveId: 'init'
-            });
-        } else {
-            if (!snap.exists()) { alert("部屋が見つかりません"); return; }
-            const data = snap.data();
-            if (!data.players[myId]) {
-                await updateDoc(roomRef, {
-                    [`players.${myId}`]: { name, score: 1000, isDefending: false },
-                    [`playerStatus.${myId}`]: data.phase === 'LOBBY' ? 'lobby' : 'thinking'
-                });
-            } else {
-                await updateDoc(roomRef, { [`playerStatus.${myId}`]: data.phase === 'LOBBY' ? 'lobby' : 'thinking' });
-            }
+    if (asHost) {
+        await setDoc(roomRef, {
+            hostId: myId, phase: 'LOBBY', currentRound: 0,
+            players: { [myId]: { name, score: 1000, isDefending: false } },
+            playerStatus: { [myId]: 'ready' },
+            playerCard: { [myId]: null },
+            hands: {}, logs: [`WELCOME TO ${roomId}`], resolveId: 'init'
+        });
+    } else {
+        if (!snap.exists()) { alert("部屋が見つかりません"); return; }
+        const data = snap.data();
+        // 重要：再入場時は既存のデータを保持し、ステータスのみ更新
+        const isExisting = !!data.players[myId];
+        const updates = {};
+        if(!isExisting) {
+            updates[`players.${myId}`] = { name, score: 1000, isDefending: false };
         }
-
-        listenToRoom();
-        document.getElementById('login-screen').style.display = 'none';
-        document.getElementById('game-screen').style.display = 'block';
-        if(isHost) document.getElementById('lobby-controls').style.display = 'block';
-        document.getElementById('display-room-id').innerText = roomId;
-        resizeCanvas();
-        requestAnimationFrame(gameLoop);
-    } catch (e) {
-        alert("接続エラー: " + e.message);
+        updates[`playerStatus.${myId}`] = data.phase === 'LOBBY' ? 'ready' : 'thinking';
+        await updateDoc(roomRef, updates);
     }
+
+    listenToRoom();
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('game-screen').style.display = 'block';
+    if(isHost) document.getElementById('lobby-controls').style.display = 'block';
+    document.getElementById('display-room-id').innerText = roomId;
+    resizeCanvas();
+    requestAnimationFrame(gameLoop);
 }
 
 function listenToRoom() {
@@ -274,20 +272,22 @@ function listenToRoom() {
         updateLeaderboard();
         calculatePositions();
 
+        // ホスト判定: フリーズ防止のため「現在ルームにいる全員」の状態をチェック
         if (isHost && gameState.phase === 'PLAYING') {
-            const activePlayers = players.filter(p => p.status !== 'away');
-            if (activePlayers.length > 0 && activePlayers.every(p => p.status === 'ready')) {
+            const currentPlayers = Object.keys(gameState.players);
+            const allReady = currentPlayers.every(pid => gameState.playerStatus[pid] === 'ready');
+            if (currentPlayers.length > 0 && allReady) {
                 resolveRound();
             }
         }
-    });
+    }, (err) => logCLI("SYNC ERROR: " + err.message));
 }
 
 async function startRound() {
     let nextRound = gameState.currentRound + 1;
     let updates = {
         phase: 'PLAYING', currentRound: nextRound,
-        logs: arrayUnion(`<span class="turn-header">--- ROUND ${nextRound} START ---</span>`),
+        logs: arrayUnion(`--- ROUND ${nextRound} START ---`),
         lastParticles: []
     };
     players.forEach(p => {
@@ -304,15 +304,41 @@ async function resolveRound() {
     let newLogs = [];
     let newParts = [];
     let pData = JSON.parse(JSON.stringify(players));
-    pData.forEach(p => { if(p.playedCardId === 'c2') { p.isDefending = true; newLogs.push(`🛡️ ${p.name}は防御した`); newParts.push({from: p.id, to: p.id, color: '#00ffff', type: 'shield'}); }});
-    pData.forEach(p => { if(p.playedCardId && p.playedCardId !== 'c2') { const fx = CARD_EFFECTS[p.playedCardId]; if(fx) fx(p, pData, newLogs, newParts); }});
-    let updates = { logs: arrayUnion(...newLogs), lastParticles: newParts, resolveId: Date.now().toString() };
-    pData.forEach(p => { updates[`players.${p.id}.score`] = p.score; updates[`players.${p.id}.isDefending`] = p.isDefending; });
+
+    pData.forEach(p => {
+        if(p.playedCardId === 'c2') {
+            p.isDefending = true;
+            newLogs.push(`🛡️ ${p.name}は防御した`);
+            newParts.push({from: p.id, to: p.id, color: '#00ffff', type: 'shield'});
+        }
+    });
+
+    pData.forEach(p => {
+        if(p.playedCardId && p.playedCardId !== 'c2') {
+            const fx = CARD_EFFECTS[p.playedCardId];
+            if(fx) fx(p, pData, newLogs, newParts);
+        }
+    });
+
+    let updates = {
+        logs: arrayUnion(...newLogs),
+        lastParticles: newParts,
+        resolveId: Date.now().toString()
+    };
+    pData.forEach(p => {
+        updates[`players.${p.id}.score`] = p.score;
+        updates[`players.${p.id}.isDefending`] = p.isDefending;
+    });
+
     await updateDoc(roomRef, updates);
-    setTimeout(() => { if (currentRound >= 10) updateDoc(roomRef, { phase: 'RESULT' }); else startRound(); }, 4000);
+
+    setTimeout(() => {
+        if (currentRound >= 10) updateDoc(roomRef, { phase: 'RESULT' });
+        else startRound();
+    }, 4000);
 }
 
-// Event Listeners
+// --- ボタンイベント ---
 document.getElementById('btn-host').onclick = () => setupRoom(Math.random().toString(36).substr(2,6).toUpperCase(), true);
 document.getElementById('btn-join').onclick = () => {
     const id = document.getElementById('room-id').value.toUpperCase();
@@ -320,7 +346,7 @@ document.getElementById('btn-join').onclick = () => {
 };
 document.getElementById('btn-start-game').onclick = () => { if(isHost) startRound(); };
 
-// --- Canvas Drawing (Same as before) ---
+// --- Canvas描画ロジック ---
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
 let playerPositions = {};
@@ -328,74 +354,114 @@ let activeParticles = [];
 let selectedCardIndex = -1;
 let hoveredCardIndex = -1;
 
-function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; calculatePositions(); }
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    calculatePositions();
+}
 window.addEventListener('resize', resizeCanvas);
 
 function calculatePositions() {
     if(!players.length) return;
-    const gameW = canvas.width - 300; const cx = gameW / 2; const cy = canvas.height / 2 - 40; const r = Math.min(gameW, canvas.height) * 0.3;
-    players.forEach((p, i) => { const ang = -Math.PI/2 + (Math.PI*2/players.length)*i; playerPositions[p.id] = { x: cx + r*Math.cos(ang), y: cy + r*Math.sin(ang) }; });
+    const gameW = canvas.width - 300;
+    const cx = gameW / 2;
+    const cy = canvas.height / 2 - 40;
+    const r = Math.min(gameW, canvas.height) * 0.3;
+    players.forEach((p, i) => {
+        const ang = -Math.PI/2 + (Math.PI*2/players.length)*i;
+        playerPositions[p.id] = { x: cx + r*Math.cos(ang), y: cy + r*Math.sin(ang) };
+    });
 }
 
 function spawnParticle(p) {
-    const from = playerPositions[p.from]; const to = playerPositions[p.to];
-    if(!from || !to) return; activeParticles.push({ ...p, startX: from.x, startY: from.y, targetX: to.x, targetY: to.y, progress: 0 });
+    const from = playerPositions[p.from];
+    const to = playerPositions[p.to];
+    if(!from || !to) return;
+    activeParticles.push({ ...p, startX: from.x, startY: from.y, targetX: to.x, targetY: to.y, progress: 0 });
 }
 
 function gameLoop() {
     const gameW = canvas.width - 300;
-    ctx.fillStyle = '#0a0500'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#0a0500';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
     if(!gameState) { requestAnimationFrame(gameLoop); return; }
+
     players.forEach(p => {
-        const pos = playerPositions[p.id]; if(!pos) return;
+        const pos = playerPositions[p.id];
+        if(!pos) return;
         ctx.fillStyle = p.status === 'ready' ? '#2ecc71' : (p.id === myId ? '#3498db' : '#7f8c8d');
         ctx.beginPath(); ctx.arc(pos.x, pos.y, 15, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '14px Arial'; ctx.fillText(p.name, pos.x, pos.y - 25);
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '14px Arial';
+        ctx.fillText(p.name, pos.x, pos.y - 25);
         ctx.fillStyle = '#f1c40f'; ctx.fillText(p.score + 'pt', pos.x, pos.y + 35);
     });
+
     if(gameState.phase === 'PLAYING') {
-        const cardW = 100, cardH = 140, margin = 10; const startX = gameW/2 - (cardW*5+margin*4)/2;
+        const cardW = 100, cardH = 140, margin = 10;
+        const startX = gameW/2 - (cardW*5+margin*4)/2;
         myHand.forEach((c, i) => {
-            const x = startX + i*(cardW+margin); const y = canvas.height - 160 + (selectedCardIndex === i ? -20 : 0);
+            const x = startX + i*(cardW+margin);
+            const y = canvas.height - 160 + (selectedCardIndex === i ? -20 : 0);
             ctx.fillStyle = '#1a1a1a'; ctx.strokeStyle = c.color; ctx.lineWidth = (hoveredCardIndex === i ? 4 : 2);
             ctx.fillRect(x, y, cardW, cardH); ctx.strokeRect(x, y, cardW, cardH);
             ctx.fillStyle = c.color; ctx.font = 'bold 12px Arial'; ctx.fillText(c.type, x + cardW/2, y + 20);
             ctx.fillStyle = '#fff'; ctx.font = '11px Arial'; ctx.fillText(c.name, x + cardW/2, y + 50);
         });
-        if(selectedCardIndex !== -1 && myState === 'SELECTING') { ctx.fillStyle = '#d35400'; ctx.fillRect(gameW/2-60, canvas.height-220, 120, 30); ctx.fillStyle = '#fff'; ctx.fillText("決定", gameW/2, canvas.height-200); }
+        if(selectedCardIndex !== -1 && myState === 'SELECTING') {
+            ctx.fillStyle = '#d35400'; ctx.fillRect(gameW/2-60, canvas.height-220, 120, 30);
+            ctx.fillStyle = '#fff'; ctx.fillText("決定", gameW/2, canvas.height-200);
+        }
     }
+
     for(let i=activeParticles.length-1; i>=0; i--){
-        let p = activeParticles[i]; p.progress += 0.02; if(p.progress >= 1) { activeParticles.splice(i,1); continue; }
-        let cx = p.startX + (p.targetX-p.startX)*p.progress; let cy = p.startY + (p.targetY-p.startY)*p.progress;
+        let p = activeParticles[i]; p.progress += 0.02;
+        if(p.progress >= 1) { activeParticles.splice(i,1); continue; }
+        let cx = p.startX + (p.targetX-p.startX)*p.progress;
+        let cy = p.startY + (p.targetY-p.startY)*p.progress;
         ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI*2); ctx.fill();
     }
-    if(gameState.phase === 'RESULT') { ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0,0,gameW,canvas.height); ctx.fillStyle = '#f1c40f'; ctx.font = '40px Arial'; ctx.fillText("GAME OVER", gameW/2, canvas.height/2); }
+
+    if(gameState.phase === 'RESULT') {
+        ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0,0,gameW,canvas.height);
+        ctx.fillStyle = '#f1c40f'; ctx.font = '40px Arial'; ctx.fillText("GAME OVER", gameW/2, canvas.height/2);
+    }
     requestAnimationFrame(gameLoop);
 }
 
 function updateLeaderboard() {
-    const list = document.getElementById('leaderboard'); list.innerHTML = '';
-    if(!players) return;
+    const list = document.getElementById('leaderboard');
+    list.innerHTML = '';
     [...players].sort((a,b)=>b.score-a.score).forEach((p, i) => {
-        let li = document.createElement('li'); if(p.id === myId) li.className = 'my-score';
-        li.innerText = `${i+1}. ${p.name}: ${p.score}pt ${p.status === 'ready' ? '✓' : ''}`; list.appendChild(li);
+        let li = document.createElement('li');
+        if(p.id === myId) li.className = 'my-score';
+        li.innerText = `${i+1}. ${p.name}: ${p.score}pt ${p.status === 'ready' ? '✓' : ''}`;
+        list.appendChild(li);
     });
 }
 
 canvas.addEventListener('mousemove', e => {
-    const gameW = canvas.width - 300; const rect = canvas.getBoundingClientRect(); const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    hoveredCardIndex = -1; if(my > canvas.height - 180 && mx < gameW) {
-        const cardW = 110; const startX = gameW/2 - (cardW*5)/2; const idx = Math.floor((mx - startX) / cardW);
+    const gameW = canvas.width - 300;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    hoveredCardIndex = -1;
+    if(my > canvas.height - 180 && mx < gameW) {
+        const cardW = 110;
+        const startX = gameW/2 - (cardW*5)/2;
+        const idx = Math.floor((mx - startX) / cardW);
         if(idx >= 0 && idx < 5) hoveredCardIndex = idx;
     }
 });
 
 canvas.addEventListener('click', async e => {
     if(myState !== 'SELECTING') return;
-    const gameW = canvas.width - 300; const rect = canvas.getBoundingClientRect(); const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const gameW = canvas.width - 300;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
     if(hoveredCardIndex !== -1) selectedCardIndex = hoveredCardIndex;
     if(selectedCardIndex !== -1 && mx > gameW/2-60 && mx < gameW/2+60 && my > canvas.height-220 && my < canvas.height-190) {
-        myState = 'WAITING'; await updateDoc(roomRef, { [`playerStatus.${myId}`]: 'ready', [`playerCard.${myId}`]: myHand[selectedCardIndex].id });
+        myState = 'WAITING';
+        await updateDoc(roomRef, { [`playerStatus.${myId}`]: 'ready', [`playerCard.${myId}`]: myHand[selectedCardIndex].id });
     }
 });
 </script>
