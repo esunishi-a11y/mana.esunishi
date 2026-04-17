@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>マナ・サイクル・コロシアム</title>
-    <!-- PeerJS WebRTCライブラリの読み込み -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         /* CSSスタイル: 全体レイアウトとログインUI */
         body {
@@ -53,7 +51,8 @@
             width: 100%;
             margin-bottom: 10px;
         }
-        button:hover { background: #33ff33; color: #000; }
+        button:hover:not(:disabled) { background: #33ff33; color: #000; }
+        button:disabled { border-color: #555; color: #555; cursor: not-allowed; text-shadow: none; }
         
         #connection-log {
             margin-top: 20px;
@@ -121,7 +120,7 @@
     <h1>マナ・サイクル・コロシアム</h1>
     <div id="connection-log">
         <div>> SYSTEM: BOOT SEQUENCE INITIATED...</div>
-        <div>> AWAITING USER INPUT.</div>
+        <div>> AWAITING DATABASE CONNECTION...</div>
     </div>
     
     <div class="input-group">
@@ -129,13 +128,13 @@
         <input type="text" id="username" value="Player1">
     </div>
     
-    <button id="btn-host">部屋を作る (HOSTとして開始)</button>
+    <button id="btn-host" disabled>部屋を作る (HOSTとして開始)</button>
     
     <div class="input-group" style="margin-top: 30px;">
         <div>> OR ENTER ROOM ID TO JOIN:</div>
         <input type="text" id="room-id" placeholder="Ex: A1B2C3">
     </div>
-    <button id="btn-join">部屋に入る (CLIENTとして参加)</button>
+    <button id="btn-join" disabled>部屋に入る (CLIENTとして参加)</button>
 </div>
 
 <!-- ゲーム画面 -->
@@ -157,29 +156,37 @@
     </div>
 </div>
 
-<script>
+<script type="module">
 /**
- * P2P & Game Logic Implementation
+ * Firebase Firestore & Game Logic Implementation
+ * (Canvas環境のWebSocket制限を回避するため、PeerJSからFirebaseへ移行)
  */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- 状態管理・グローバル変数 ---
-let peer = null;
+let user = null;
 let myId = '';
 let isHost = false;
-let hostConn = null;       // Client用: Hostとの接続
-let connections = [];      // Host用: 全Clientとの接続
+let roomRef = null;
+let unsubscribe = null;
+let gameState = null; // Firestoreから同期される最新状態
 
-let gamePhase = 'LOBBY';   // LOBBY, PLAYING, RESOLVING, RESULT
-let players = [];          // {id, name, score, status: 'lobby'|'thinking'|'ready', isDefending}
+let players = [];          // 描画用のプレイヤー配列
 let currentRound = 0;
+let gamePhase = 'LOBBY';   // LOBBY, PLAYING, RESOLVING, RESULT
 const MAX_ROUNDS = 10;
 
 // クライアント固有状態
 let myHand = [];
 let myState = 'WAITING';   // SELECTING, WAITING
 let selectedCardIndex = -1;
+let lastRound = 0;
+let lastResolveId = null;
 
 // --- カードデータベース ---
+// ※Firestoreには関数を保存できないため、効果解決時にこのローカルデータを参照します
 const CARDS = [
     { id: 'c1', name: "Knight's Strike", type: "ATK", color: "#e74c3c", desc: "ランダムな相手から200pt奪う", 
       effect: (user, ps, logs, parts) => {
@@ -196,7 +203,7 @@ const CARDS = [
         }
     }},
     { id: 'c2', name: "Holy Barrier", type: "DEF", color: "#3498db", desc: "このターンのポイント減少を完全に防ぐ", 
-      effect: () => {} // DEFは解決フェーズの最初に処理されるためここは空
+      effect: () => {} 
     },
     { id: 'c3', name: "Mage's Transfer", type: "MAG", color: "#9b59b6", desc: "ランダムな相手とスコアを平均化する", 
       effect: (user, ps, logs, parts) => {
@@ -245,98 +252,110 @@ const CARDS = [
     }}
 ];
 
-// --- 初期化 & PeerJS通信 ---
+// --- 初期化 & Firebase通信 ---
+const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
 function logCLI(msg) {
     const el = document.getElementById('connection-log');
     const div = document.createElement('div');
-    div.innerText = '> ' + msg;
+    div.innerHTML = '> ' + msg;
     el.appendChild(div);
     el.scrollTop = el.scrollHeight;
 }
+
+window.onload = async () => {
+    try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+            await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+            await signInAnonymously(auth);
+        }
+        user = auth.currentUser;
+        myId = user.uid;
+        logCLI(`SYSTEM: DATABASE CONNECTED. ID: [${myId.substring(0,6)}]`);
+        
+        document.getElementById('btn-host').disabled = false;
+        document.getElementById('btn-join').disabled = false;
+    } catch(e) {
+        logCLI(`ERROR: AUTH FAILED. ${e.message}`);
+    }
+};
 
 function generateId() {
     return Math.random().toString(36).substr(2, 6).toUpperCase();
 }
 
-document.getElementById('btn-host').addEventListener('click', () => {
+document.getElementById('btn-host').addEventListener('click', async () => {
+    if(!user) return;
     const name = document.getElementById('username').value || 'Host';
+    const roomId = generateId();
     isHost = true;
-    initPeer(name);
+    
+    logCLI(`CREATING ROOM [${roomId}]...`);
+    roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'mana_cycle_rooms', roomId);
+    
+    // 初期状態の保存
+    const initialState = {
+        hostId: myId,
+        phase: 'LOBBY',
+        currentRound: 0,
+        players: { [myId]: { name: name, score: 1000, isDefending: false } },
+        playerStatus: { [myId]: 'lobby' },
+        playerCard: { [myId]: null },
+        hands: {},
+        logs: [],
+        particles: [],
+        resolveId: null
+    };
+    
+    await setDoc(roomRef, initialState);
+    
+    document.getElementById('display-room-id').innerText = roomId;
+    document.getElementById('lobby-controls').style.display = 'block';
+    
+    listenToRoom();
+    switchToGameScreen();
 });
 
-document.getElementById('btn-join').addEventListener('click', () => {
+document.getElementById('btn-join').addEventListener('click', async () => {
+    if(!user) return;
     const name = document.getElementById('username').value || 'Player';
     const roomId = document.getElementById('room-id').value.toUpperCase();
-    if(!roomId) {
-        logCLI('ERROR: ROOM ID IS REQUIRED TO JOIN.');
+    if(!roomId) { logCLI('ERROR: ROOM ID IS REQUIRED.'); return; }
+    
+    isHost = false;
+    logCLI(`CONNECTING TO ROOM [${roomId}]...`);
+    roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'mana_cycle_rooms', roomId);
+    
+    const snap = await getDoc(roomRef);
+    if (!snap.exists()) {
+        logCLI("ERROR: ROOM NOT FOUND.");
         return;
     }
-    isHost = false;
-    initPeer(name, roomId);
+    
+    const data = snap.data();
+    if (data.phase !== 'LOBBY') {
+        logCLI("ERROR: GAME ALREADY STARTED.");
+        return;
+    }
+    if (Object.keys(data.players).length >= 10) {
+        logCLI("ERROR: ROOM IS FULL.");
+        return;
+    }
+    
+    // 自身を参加者として追加 (競合防止のため部分更新)
+    await updateDoc(roomRef, {
+        [`players.${myId}`]: { name: name, score: 1000, isDefending: false },
+        [`playerStatus.${myId}`]: 'lobby'
+    });
+    
+    listenToRoom();
+    switchToGameScreen();
 });
-
-function initPeer(username, roomIdToJoin = null) {
-    logCLI("INITIALIZING WEBRTC CONNECTION...");
-    // 任意のIDでPeerサーバーに接続
-    peer = new Peer(generateId());
-    
-    peer.on('open', id => {
-        myId = id;
-        logCLI(`CONNECTED. YOUR ID: [${id}]`);
-        
-        if(isHost) {
-            logCLI(`AWAITING PLAYERS... ROOM ID IS [${id}]`);
-            document.getElementById('display-room-id').innerText = id;
-            players.push({id: myId, name: username, score: 1000, status: 'lobby'});
-            
-            switchToGameScreen();
-            document.getElementById('lobby-controls').style.display = 'block';
-            updateLeaderboard();
-        } else {
-            joinRoom(username, roomIdToJoin);
-        }
-    });
-
-    peer.on('connection', conn => {
-        if(isHost) {
-            conn.on('open', () => {
-                connections.push(conn);
-                conn.on('data', data => handleClientData(conn, data));
-            });
-            conn.on('close', () => {
-                players = players.filter(p => p.id !== conn.peer);
-                connections = connections.filter(c => c !== conn);
-                broadcastState();
-                addActionLog(`SYSTEM: ${conn.peer} が切断しました。`);
-            });
-        }
-    });
-}
-
-function joinRoom(username, roomId) {
-    logCLI(`CONNECTING TO HOST: [${roomId}]...`);
-    hostConn = peer.connect(roomId);
-    
-    hostConn.on('open', () => {
-        logCLI("CONNECTED TO HOST SUCCESSFULLY.");
-        hostConn.send({type: 'JOIN', name: username, id: myId});
-    });
-    
-    hostConn.on('data', data => {
-        if(data.type === 'STATE_UPDATE') {
-            updateLocalState(data);
-            if(document.getElementById('login-screen').style.display !== 'none') {
-                switchToGameScreen();
-            }
-        } else if (data.type === 'ROUND_START') {
-            handleRoundStart(data);
-        } else if (data.type === 'ROUND_RESULT') {
-            updateLocalResult(data);
-        } else if (data.type === 'ERROR') {
-            logCLI(`ERROR FROM HOST: ${data.msg}`);
-        }
-    });
-}
 
 function switchToGameScreen() {
     document.getElementById('login-screen').style.display = 'none';
@@ -345,172 +364,172 @@ function switchToGameScreen() {
     requestAnimationFrame(gameLoop);
 }
 
-// --- ホスト用ロジック ---
-let readyCount = 0;
-
-function handleClientData(conn, data) {
-    if(data.type === 'JOIN') {
-        if(players.length >= 10 || gamePhase !== 'LOBBY') {
-            conn.send({type: 'ERROR', msg: 'Room is full or game has started.'});
-            return;
+// --- リアルタイム同期リスナー ---
+function listenToRoom() {
+    unsubscribe = onSnapshot(roomRef, (snap) => {
+        if (!snap.exists()) return;
+        gameState = snap.data();
+        
+        // ローカル変数へマッピング
+        currentRound = gameState.currentRound;
+        gamePhase = gameState.phase;
+        
+        players = Object.keys(gameState.players).map(id => ({
+            id: id,
+            name: gameState.players[id].name,
+            score: gameState.players[id].score,
+            isDefending: gameState.players[id].isDefending,
+            status: gameState.playerStatus[id],
+            playedCardId: gameState.playerCard[id]
+        }));
+        
+        // 手札の復元 (ID配列からカードオブジェクトへ)
+        if (gameState.hands && gameState.hands[myId]) {
+            myHand = gameState.hands[myId].map(cardId => CARDS.find(c => c.id === cardId)).filter(Boolean);
+        } else {
+            myHand = [];
         }
-        players.push({id: data.id, name: data.name, score: 1000, status: 'lobby'});
-        addActionLog(`SYSTEM: ${data.name} が参加しました。`);
-        broadcastState();
-    } else if (data.type === 'PLAY_CARD') {
-        handlePlayCard(data.id, data.card);
-    }
+        
+        // ラウンド開始の検知
+        if (currentRound > lastRound && gamePhase === 'PLAYING') {
+            lastRound = currentRound;
+            myState = 'SELECTING';
+            selectedCardIndex = -1;
+        }
+        
+        // ログ・エフェクトの検知
+        if (gameState.resolveId && gameState.resolveId !== lastResolveId) {
+            lastResolveId = gameState.resolveId;
+            if (gameState.particles) {
+                gameState.particles.forEach(p => {
+                    let fromPos = playerPositions[p.from];
+                    let toPos = playerPositions[p.to];
+                    if(fromPos && toPos) {
+                        activeParticles.push({
+                            type: p.type || 'projectile',
+                            startX: fromPos.x, startY: fromPos.y,
+                            targetX: toPos.x, targetY: toPos.y,
+                            color: p.color,
+                            progress: 0,
+                            speed: 0.015 + Math.random() * 0.01
+                        });
+                    }
+                });
+            }
+            if (gameState.logs) {
+                gameState.logs.forEach(l => addActionLog(l));
+            }
+        }
+        
+        updateLeaderboard();
+        calculatePositions();
+        
+        // ホストのみ：全員がReadyかチェックして解決処理へ
+        if (isHost && gamePhase === 'PLAYING') {
+            const allReady = players.every(p => p.status === 'ready');
+            if (allReady && players.length > 0) {
+                resolveRound();
+            }
+        }
+    }, (error) => {
+        console.error("Firestore Error:", error);
+    });
 }
 
-function broadcastState() {
-    const state = {
-        type: 'STATE_UPDATE',
-        players: players.map(p => ({id: p.id, name: p.name, score: p.score, status: p.status})),
-        currentRound: currentRound,
-        phase: gamePhase
-    };
-    connections.forEach(c => c.send(state));
-    updateLocalState(state); // 自身にも適用
-}
-
+// --- ホスト用ロジック ---
 document.getElementById('btn-start-game').addEventListener('click', () => {
     if(!isHost) return;
-    if(players.length < 1) {
-        alert("プレイヤーが必要です。"); return;
-    }
+    if(players.length < 1) { alert("プレイヤーが必要です。"); return; }
     document.getElementById('lobby-controls').style.display = 'none';
     startRound();
 });
 
 function drawCards(num) {
     let h = [];
-    for(let i=0; i<num; i++) h.push(CARDS[Math.floor(Math.random() * CARDS.length)]);
+    for(let i=0; i<num; i++) h.push(CARDS[Math.floor(Math.random() * CARDS.length)].id);
     return h;
 }
 
-function startRound() {
-    currentRound++;
-    players.forEach(p => {
-        p.status = 'thinking';
-        p.playedCard = null;
-        p.isDefending = false;
-        
-        let hand = drawCards(5);
-        if(p.id === myId) {
-            handleRoundStart({round: currentRound, hand: hand});
-        } else {
-            const conn = connections.find(c => c.peer === p.id);
-            if(conn) conn.send({type: 'ROUND_START', round: currentRound, hand: hand});
-        }
+async function startRound() {
+    let updates = {
+        phase: 'PLAYING',
+        currentRound: gameState.currentRound + 1,
+        logs: [`<span class="turn-header">--- ROUND ${gameState.currentRound + 1} START ---</span>`],
+        particles: [],
+        resolveId: 'start_' + Date.now()
+    };
+    
+    // 全員の状態をリセットし、手札を配る
+    Object.keys(gameState.players).forEach(id => {
+        updates[`playerStatus.${id}`] = 'thinking';
+        updates[`playerCard.${id}`] = null;
+        updates[`players.${id}.isDefending`] = false;
+        updates[`hands.${id}`] = drawCards(5);
     });
-    gamePhase = 'PLAYING';
-    readyCount = 0;
-    broadcastState();
+    
+    await updateDoc(roomRef, updates);
 }
 
-function handlePlayCard(playerId, card) {
-    let p = players.find(p => p.id === playerId);
-    if(p && p.status === 'thinking') {
-        p.status = 'ready';
-        p.playedCard = card;
-        readyCount++;
-        broadcastState(); // 誰がreadyになったか更新
-        
-        if(readyCount >= players.length) {
-            resolveRound();
-        }
-    }
-}
-
-function resolveRound() {
-    gamePhase = 'RESOLVING';
+async function resolveRound() {
+    // 状態が勝手に進まないようフェーズ変更を即時反映
+    await updateDoc(roomRef, { phase: 'RESOLVING' });
+    
     let logs = [];
     let parts = [];
     
+    // スコア計算用のディープコピー
+    let pList = JSON.parse(JSON.stringify(players));
+    
     // 1. DEFカードの事前処理
-    players.forEach(p => {
+    pList.forEach(p => {
         p.isDefending = false;
-        if(p.playedCard && p.playedCard.type === 'DEF') {
-            p.isDefending = true;
-            logs.push(`🛡️ ${p.name}は防御態勢に入った。`);
-            parts.push({from: p.id, to: p.id, color: '#00ffff', type: 'shield'});
-        }
-    });
-
-    // 2. ATK/MAGカードの処理
-    players.forEach(p => {
-        if(p.playedCard && p.playedCard.type !== 'DEF') {
-            let cardObj = CARDS.find(c => c.id === p.playedCard.id);
-            if(cardObj && cardObj.effect) {
-                cardObj.effect(p, players, logs, parts);
+        if(p.playedCardId) {
+            let cardObj = CARDS.find(c => c.id === p.playedCardId);
+            if(cardObj && cardObj.type === 'DEF') {
+                p.isDefending = true;
+                logs.push(`🛡️ ${p.name}は防御態勢に入った。`);
+                parts.push({from: p.id, to: p.id, color: '#00ffff', type: 'shield'});
             }
         }
     });
 
-    // 3. 結果の送信
-    const resultMsg = {
-        type: 'ROUND_RESULT',
+    // 2. ATK/MAGカードの処理
+    pList.forEach(p => {
+        if(p.playedCardId) {
+            let cardObj = CARDS.find(c => c.id === p.playedCardId);
+            if(cardObj && cardObj.type !== 'DEF') {
+                if(cardObj.effect) {
+                    cardObj.effect(p, pList, logs, parts);
+                }
+            }
+        }
+    });
+
+    // 結果の送信(部分更新)
+    let updates = {
         logs: logs,
         particles: parts,
-        players: players.map(p => ({id: p.id, name: p.name, score: p.score}))
+        resolveId: Date.now().toString()
     };
     
-    connections.forEach(c => c.send(resultMsg));
-    updateLocalResult(resultMsg);
+    pList.forEach(p => {
+        updates[`players.${p.id}.score`] = p.score;
+        updates[`players.${p.id}.isDefending`] = p.isDefending;
+    });
+    
+    await updateDoc(roomRef, updates);
 
-    // 4. アニメーション待機後、次へ
+    // アニメーション待機後、次へ
     setTimeout(() => {
-        if(currentRound >= MAX_ROUNDS) {
-            gamePhase = 'RESULT';
-            broadcastState();
+        if (gameState.currentRound >= MAX_ROUNDS) {
+            updateDoc(roomRef, { phase: 'RESULT' });
         } else {
             startRound();
         }
-    }, 4500); // 4.5秒待機
+    }, 4500);
 }
 
 // --- クライアント/UI 更新ロジック ---
-function updateLocalState(data) {
-    players = data.players;
-    currentRound = data.currentRound;
-    gamePhase = data.phase;
-    updateLeaderboard();
-    calculatePositions();
-}
-
-function handleRoundStart(data) {
-    currentRound = data.round;
-    myHand = data.hand;
-    myState = 'SELECTING';
-    selectedCardIndex = -1;
-    addActionLog(`<span class="turn-header">--- ROUND ${currentRound} START ---</span>`);
-}
-
-function updateLocalResult(data) {
-    // スコア同期
-    players = data.players;
-    updateLeaderboard();
-    
-    // ログ追加
-    data.logs.forEach(l => addActionLog(l));
-    
-    // エフェクト生成
-    data.particles.forEach(p => {
-        let fromPos = playerPositions[p.from];
-        let toPos = playerPositions[p.to];
-        if(fromPos && toPos) {
-            activeParticles.push({
-                type: p.type || 'projectile',
-                startX: fromPos.x, startY: fromPos.y,
-                targetX: toPos.x, targetY: toPos.y,
-                color: p.color,
-                progress: 0,
-                speed: 0.015 + Math.random() * 0.01
-            });
-        }
-    });
-}
-
 function updateLeaderboard() {
     const list = document.getElementById('leaderboard');
     list.innerHTML = '';
@@ -530,6 +549,18 @@ function addActionLog(msg) {
     li.innerHTML = msg;
     list.appendChild(li);
     list.scrollTop = list.scrollHeight;
+}
+
+async function submitCard() {
+    if (!roomRef) return;
+    const card = myHand[selectedCardIndex];
+    myState = 'WAITING';
+    
+    // 自身の状態だけを更新（競合回避）
+    await updateDoc(roomRef, {
+        [`playerStatus.${myId}`]: 'ready',
+        [`playerCard.${myId}`]: card.id
+    });
 }
 
 // --- Canvas 描画ロジック ---
@@ -561,13 +592,12 @@ function calculatePositions() {
         const theta = -Math.PI / 2 + (Math.PI * 2 / players.length) * i;
         playerPositions[p.id] = {
             x: gameCx + radius * Math.cos(theta),
-            y: cy + radius * Math.sin(theta) - 50 // 手札スペースを避けるため少し上へ
+            y: cy + radius * Math.sin(theta) - 50
         };
     });
 }
 
 function drawBackground() {
-    // セピア/ダークファンタジー風グラデーション
     let grad = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 0, canvas.width/2, canvas.height/2, canvas.width);
     grad.addColorStop(0, '#2a1e12');
     grad.addColorStop(1, '#0a0500');
@@ -587,7 +617,6 @@ function drawMagicCircle(cx, cy, radius) {
     ctx.beginPath(); ctx.arc(0, 0, radius * 0.3, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.arc(0, 0, radius * 0.28, 0, Math.PI * 2); ctx.stroke();
     
-    // 八芒星
     for(let i=0; i<8; i++) {
         ctx.beginPath();
         ctx.moveTo(radius * 0.3 * Math.cos(i * Math.PI / 4), radius * 0.3 * Math.sin(i * Math.PI / 4));
@@ -605,7 +634,6 @@ function drawPlayers() {
         ctx.save();
         ctx.translate(pos.x, pos.y);
         
-        // 拠点クリスタル（ひし形）
         if(p.status === 'ready' && gamePhase === 'PLAYING') {
             ctx.shadowBlur = 15;
             ctx.shadowColor = '#2ecc71';
@@ -619,7 +647,6 @@ function drawPlayers() {
         ctx.closePath();
         ctx.fill();
         
-        // テキスト
         ctx.shadowBlur = 0;
         ctx.fillStyle = '#ecf0f1';
         ctx.font = '14px Arial';
@@ -670,16 +697,13 @@ function drawHand() {
         const isHovered = (i === hoveredCardIndex);
         const drawY = isSelected ? y - 25 : (isHovered ? y - 10 : y);
         
-        // カード背景
         ctx.fillStyle = isSelected ? '#3e2723' : '#2c1e16';
         ctx.fillRect(x, drawY, cw, ch);
         
-        // 枠
         ctx.strokeStyle = card.color;
         ctx.lineWidth = isSelected ? 4 : 2;
         ctx.strokeRect(x, drawY, cw, ch);
         
-        // テキスト
         ctx.fillStyle = card.color;
         ctx.font = 'bold 12px Arial';
         ctx.textAlign = 'center';
@@ -694,7 +718,6 @@ function drawHand() {
         wrapText(ctx, card.desc, x + cw/2, drawY + 90, cw - 10, 14);
     });
 
-    // 決定ボタン・ステータス表示
     const btnX = gameW / 2 - 80;
     const btnY = y - 60;
     
@@ -731,7 +754,6 @@ function updateAndDrawParticles() {
             p.progress += p.speed;
             if(p.progress >= 1) { activeParticles.splice(i, 1); continue; }
             
-            // Ease in-out
             let ease = p.progress < .5 ? 2 * p.progress * p.progress : -1 + (4 - 2 * p.progress) * p.progress;
             let cx = p.startX + (p.targetX - p.startX) * ease;
             let cy = p.startY + (p.targetY - p.startY) * ease;
@@ -744,7 +766,6 @@ function updateAndDrawParticles() {
             ctx.fill();
             ctx.shadowBlur = 0;
             
-            // 軌跡
             ctx.beginPath();
             ctx.moveTo(cx, cy);
             ctx.lineTo(cx - (p.targetX - p.startX)*0.05, cy - (p.targetY - p.startY)*0.05);
@@ -766,9 +787,11 @@ function drawResult() {
     ctx.fillText("GAME FINISHED", gameW / 2, canvas.height / 2 - 50);
     
     let sorted = [...players].sort((a,b) => b.score - a.score);
-    ctx.fillStyle = '#fff';
-    ctx.font = '32px Arial';
-    ctx.fillText(`WINNER: ${sorted[0].name} (${sorted[0].score}pt)`, gameW / 2, canvas.height / 2 + 30);
+    if(sorted.length > 0) {
+        ctx.fillStyle = '#fff';
+        ctx.font = '32px Arial';
+        ctx.fillText(`WINNER: ${sorted[0].name} (${sorted[0].score}pt)`, gameW / 2, canvas.height / 2 + 30);
+    }
 }
 
 function gameLoop() {
@@ -790,7 +813,6 @@ function gameLoop() {
         drawPlayers();
         drawHand();
         
-        // ラウンド数表示
         ctx.fillStyle = 'rgba(255,255,255,0.2)';
         ctx.font = 'bold 120px Arial';
         ctx.textAlign = 'center';
@@ -825,29 +847,16 @@ canvas.addEventListener('click', e => {
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     
-    // カード選択
     if(hoveredCardIndex !== -1 && myState === 'SELECTING') {
         selectedCardIndex = hoveredCardIndex;
     }
     
-    // 決定ボタン押下
     if(btnRect && selectedCardIndex !== -1 && myState === 'SELECTING') {
         if(mx >= btnRect.x && mx <= btnRect.x + btnRect.w && my >= btnRect.y && my <= btnRect.y + btnRect.h) {
             submitCard();
         }
     }
 });
-
-function submitCard() {
-    const card = myHand[selectedCardIndex];
-    myState = 'WAITING';
-    
-    if(isHost) {
-        handlePlayCard(myId, card);
-    } else {
-        hostConn.send({type: 'PLAY_CARD', id: myId, card: card});
-    }
-}
 
 </script>
 </body>
