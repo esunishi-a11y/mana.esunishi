@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>マナ・サイクル・コロシアム - Ver 1.3 (Stable)</title>
+    <title>マナ・サイクル・コロシアム - Ver 1.4 (Stable)</title>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; color: #fff; user-select: none; }
         #login-screen { color: #33ff33; text-shadow: 0 0 5px #33ff33; padding: 30px; max-width: 600px; margin: 50px auto; border: 2px solid #33ff33; background: #051505; box-shadow: 0 0 20px rgba(51, 255, 51, 0.2); }
@@ -29,7 +29,7 @@
 <body>
 
 <div id="login-screen">
-    <h1>マナ・サイクル・コロシアム Ver 1.3</h1>
+    <h1>マナ・サイクル・コロシアム Ver 1.4</h1>
     <div id="connection-log">
         <div>> SYSTEM: STANDBY...</div>
     </div>
@@ -65,26 +65,16 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// --- Configuration Helper ---
-const getFirebaseConfig = () => {
-    // 1. 環境変数チェック (Canvas環境)
-    if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-        try { return JSON.parse(__firebase_config); } catch(e) { console.error(e); }
-    }
-    // 2. 外部サーバー用 (GitHub Pages等で動かす場合はここに自分の設定を貼る)
-    const myCustomConfig = {
-        /* apiKey: "...", authDomain: "...", projectId: "...", ... */
-    };
-    if (myCustomConfig.apiKey) return myCustomConfig;
-    return null;
+// --- Configuration ---
+const config = (typeof __firebase_config !== 'undefined' && __firebase_config) ? JSON.parse(__firebase_config) : {
+    /* GitHub Pages等で動かす場合はここに自分のFirebase設定を貼る */
+    /* apiKey: "...", authDomain: "...", ... */
 };
 
-const config = getFirebaseConfig();
-let auth, db, appId = typeof __app_id !== 'undefined' ? __app_id : 'mana-cycle-col-v13';
+let auth, db, appId = typeof __app_id !== 'undefined' ? __app_id : 'mana-cycle-col-v14';
 let myId = '';
 let isHost = false;
 let roomRef = null;
-let currentRoomId = '';
 let localLogCount = 0;
 let gameState = null;
 let players = [];
@@ -103,20 +93,14 @@ function logCLI(msg) {
     el.scrollTop = el.scrollHeight;
 }
 
-// 緊急アンロック (Firebaseが繋がらなくてもUI操作だけは可能にする)
-setTimeout(() => {
-    const h = document.getElementById('btn-host');
-    if(h && h.disabled) {
-        logCLI("<span style='color:orange;'>SYSTEM: OFFLINE MODE / WAIT TIMEOUT</span>");
-        h.disabled = false;
-        document.getElementById('btn-join').disabled = false;
-    }
-}, 3000);
-
 const initApp = async () => {
-    if (!config) {
-        logCLI("<span style='color:red;'>ERROR: FIREBASE CONFIG NOT FOUND.</span>");
-        logCLI("外部サーバーで動かすにはFirebaseの設定が必要です。");
+    // 設定が空でも、ボタンを有効化して「あとでエラーが出る」形にする（初期化でフリーズさせない）
+    const h = document.getElementById('btn-host');
+    const j = document.getElementById('btn-join');
+    
+    if (!config.apiKey && typeof __firebase_config === 'undefined') {
+        logCLI("<span style='color:orange;'>WARNING: Firebase設定が見つかりません。外部環境では設定をソースに貼り付けてください。</span>");
+        h.disabled = false; j.disabled = false; // 強制アンロック
         return;
     }
 
@@ -129,8 +113,7 @@ const initApp = async () => {
             if (user) {
                 myId = user.uid;
                 logCLI(`SYSTEM: AUTH SUCCESS [${myId.substring(0,6)}]`);
-                document.getElementById('btn-host').disabled = false;
-                document.getElementById('btn-join').disabled = false;
+                h.disabled = false; j.disabled = false;
             }
         });
 
@@ -141,9 +124,7 @@ const initApp = async () => {
         }
     } catch (e) {
         logCLI("BOOT ERROR: " + e.message);
-        // エラーが出ても入力は許可する
-        document.getElementById('btn-host').disabled = false;
-        document.getElementById('btn-join').disabled = false;
+        h.disabled = false; j.disabled = false;
     }
 };
 
@@ -192,9 +173,8 @@ const CARD_EFFECTS = {
 
 // --- 通信ロジック ---
 async function setupRoom(roomId, asHost) {
-    if(!db) { alert("Database not ready."); return; }
+    if(!db) { alert("Firebaseが接続されていません。設定を確認してください。"); return; }
     if(!myId) myId = crypto.randomUUID();
-    currentRoomId = roomId;
     isHost = asHost;
     roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'mana_cycle_rooms', roomId);
     
@@ -212,10 +192,9 @@ async function setupRoom(roomId, asHost) {
     } else {
         if (!snap.exists()) { alert("部屋が見つかりません"); return; }
         const data = snap.data();
-        // 重要：再入場時は既存のデータを保持し、ステータスのみ更新
-        const isExisting = !!data.players[myId];
         const updates = {};
-        if(!isExisting) {
+        // 既存プレイヤーならスコアを維持、新規なら1000pt
+        if(!data.players[myId]) {
             updates[`players.${myId}`] = { name, score: 1000, isDefending: false };
         }
         updates[`playerStatus.${myId}`] = data.phase === 'LOBBY' ? 'ready' : 'thinking';
@@ -272,11 +251,10 @@ function listenToRoom() {
         updateLeaderboard();
         calculatePositions();
 
-        // ホスト判定: フリーズ防止のため「現在ルームにいる全員」の状態をチェック
+        // 進行判定: プレイヤーが一人でもいて、全員が準備完了なら次へ
         if (isHost && gameState.phase === 'PLAYING') {
             const currentPlayers = Object.keys(gameState.players);
-            const allReady = currentPlayers.every(pid => gameState.playerStatus[pid] === 'ready');
-            if (currentPlayers.length > 0 && allReady) {
+            if (currentPlayers.length > 0 && currentPlayers.every(pid => gameState.playerStatus[pid] === 'ready')) {
                 resolveRound();
             }
         }
@@ -431,6 +409,7 @@ function gameLoop() {
 
 function updateLeaderboard() {
     const list = document.getElementById('leaderboard');
+    if(!list) return;
     list.innerHTML = '';
     [...players].sort((a,b)=>b.score-a.score).forEach((p, i) => {
         let li = document.createElement('li');
