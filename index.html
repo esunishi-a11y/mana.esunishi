@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>マナ・サイクル・コロシアム - Ver 1.21</title>
+    <title>マナ・サイクル・コロシアム - Ver 1.22</title>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; color: #fff; user-select: none; }
         #login-screen { color: #33ff33; text-shadow: 0 0 5px #33ff33; padding: 30px; max-width: 600px; margin: 50px auto; border: 2px solid #33ff33; background: #051505; box-shadow: 0 0 20px rgba(51, 255, 51, 0.2); }
@@ -32,7 +32,7 @@
 <div id="login-screen">
     <h1>マナ・サイクル・コロシアム</h1>
     <div id="connection-log">
-        <div>> SYSTEM: BOOTING...</div>
+        <div>> SYSTEM: LOADING MODULES...</div>
     </div>
     <div class="input-group">
         <div>> ENTER USERNAME:</div>
@@ -62,6 +62,28 @@
 </div>
 
 <script type="module">
+// --- Global Debug Log ---
+window.logCLI = function(msg) {
+    const el = document.getElementById('connection-log');
+    if (!el) return;
+    const div = document.createElement('div');
+    div.innerHTML = '> ' + msg;
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+};
+
+logCLI("SYSTEM: CORE INITIALIZED.");
+
+// ボタンを即座に解放するバックアップ（通信がなくてもUIは触れるようにする）
+setTimeout(() => {
+    const bh = document.getElementById('btn-host');
+    if (bh && bh.disabled) {
+        bh.disabled = false;
+        document.getElementById('btn-join').disabled = false;
+        logCLI("SYSTEM: EMERGENCY UI UNLOCK.");
+    }
+}, 2000);
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -80,77 +102,52 @@ let currentRound = 0;
 let lastRound = 0;
 let lastResolveId = null;
 
-function logCLI(msg) {
-    const el = document.getElementById('connection-log');
-    if (!el) return;
-    const div = document.createElement('div');
-    div.innerHTML = '> ' + msg;
-    el.appendChild(div);
-    el.scrollTop = el.scrollHeight;
-}
-
-function enableButtons() {
-    document.getElementById('btn-host').disabled = false;
-    document.getElementById('btn-join').disabled = false;
-    logCLI("SYSTEM: BUTTONS UNLOCKED.");
-}
-
 // --- Firebase Initialization ---
 let auth, db, appId;
 
-try {
-    logCLI("SYSTEM: INITIALIZING FIREBASE...");
-    const config = (typeof __firebase_config !== 'undefined') ? JSON.parse(__firebase_config) : null;
-    
-    if (!config) {
-        logCLI("CRITICAL: FIREBASE CONFIG MISSING.");
-    } else {
+async function bootstrap() {
+    try {
+        logCLI("SYSTEM: CONNECTING TO SERVICES...");
+        
+        // 環境変数チェック
+        const configStr = (typeof __firebase_config !== 'undefined') ? __firebase_config : null;
+        if (!configStr) {
+            logCLI("WARNING: CLOUD CONFIG NOT FOUND. LOCAL MODE?");
+            return;
+        }
+        
+        const config = JSON.parse(configStr);
         const app = initializeApp(config);
         auth = getAuth(app);
         db = getFirestore(app);
         appId = typeof __app_id !== 'undefined' ? __app_id : 'mana-cycle-col';
 
-        // 認証リスナー
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 myId = user.uid;
                 logCLI(`SYSTEM: AUTH SUCCESS [${myId.substring(0,6)}]`);
-                enableButtons();
-            } else {
-                logCLI("SYSTEM: ATTEMPTING ANONYMOUS SIGN-IN...");
+                document.getElementById('btn-host').disabled = false;
+                document.getElementById('btn-join').disabled = false;
             }
         });
 
-        // サインイン実行
-        const startAuth = async () => {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (err) {
-                logCLI("ERROR: AUTH FAILED - " + err.message);
-                // 通信エラー等でも一応ボタンを開放（Firestoreのルール次第でエラーが出るがUIは動く）
-                setTimeout(enableButtons, 2000);
-            }
-        };
-        startAuth();
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+            await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+            await signInAnonymously(auth);
+        }
+
+    } catch (e) {
+        logCLI("ERROR: BOOTSTRAP FAILED - " + e.message);
+        // エラーが出てもボタンは押せるようにする（フォールバック）
+        document.getElementById('btn-host').disabled = false;
+        document.getElementById('btn-join').disabled = false;
     }
-} catch (e) {
-    logCLI("FATAL ERROR: " + e.message);
-    setTimeout(enableButtons, 3000); // 最後の手段として強制有効化
 }
 
-// バックアップタイマー（認証がスタックした場合用）
-setTimeout(() => {
-    if (document.getElementById('btn-host').disabled) {
-        logCLI("SYSTEM: AUTH TIMEOUT - FORCING UNLOCK...");
-        enableButtons();
-    }
-}, 5000);
+bootstrap();
 
-// --- カードデータ & ロジック (変更なし) ---
+// --- カードデータ & ロジック ---
 const CARDS = [
     { id: 'c1', name: "Knight's Strike", type: "ATK", color: "#e74c3c", desc: "ランダムな相手から200pt奪う" },
     { id: 'c2', name: "Holy Barrier", type: "DEF", color: "#3498db", desc: "ターン内の減少を防ぐ" },
@@ -191,9 +188,10 @@ const CARD_EFFECTS = {
     }
 };
 
-// --- 通信ロジック (再入場対策) ---
+// --- 通信ロジック ---
 async function setupRoom(roomId, asHost) {
-    if (!myId) myId = crypto.randomUUID(); // 万が一認証に失敗していてもIDを生成
+    if (!db) { alert("データベースに接続できていません。再読み込みしてください。"); return; }
+    if (!myId) myId = crypto.randomUUID();
     currentRoomId = roomId;
     isHost = asHost;
     roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'mana_cycle_rooms', roomId);
@@ -213,14 +211,12 @@ async function setupRoom(roomId, asHost) {
         } else {
             if (!snap.exists()) { alert("部屋が見つかりません"); return; }
             const data = snap.data();
-            // 既存プレイヤーチェック（再入場対策）
             if (!data.players[myId]) {
                 await updateDoc(roomRef, {
                     [`players.${myId}`]: { name, score: 1000, isDefending: false },
                     [`playerStatus.${myId}`]: data.phase === 'LOBBY' ? 'lobby' : 'thinking'
                 });
             } else {
-                // 再入場時はステータスを復旧
                 await updateDoc(roomRef, { [`playerStatus.${myId}`]: data.phase === 'LOBBY' ? 'lobby' : 'thinking' });
             }
         }
@@ -233,7 +229,7 @@ async function setupRoom(roomId, asHost) {
         resizeCanvas();
         requestAnimationFrame(gameLoop);
     } catch (e) {
-        alert("エラーが発生しました: " + e.message);
+        alert("接続エラー: " + e.message);
     }
 }
 
@@ -253,7 +249,6 @@ function listenToRoom() {
             myHand = gameState.hands[myId].map(cid => CARDS.find(c => c.id === cid)).filter(Boolean);
         }
 
-        // アクションログ同期
         if (gameState.logs && gameState.logs.length > localLogCount) {
             const list = document.getElementById('action-log');
             for (let i = localLogCount; i < gameState.logs.length; i++) {
@@ -285,12 +280,9 @@ function listenToRoom() {
                 resolveRound();
             }
         }
-    }, (err) => {
-        console.error("Snapshot error:", err);
     });
 }
 
-// --- ゲームロジック (変更なし) ---
 async function startRound() {
     let nextRound = gameState.currentRound + 1;
     let updates = {
@@ -320,6 +312,7 @@ async function resolveRound() {
     setTimeout(() => { if (currentRound >= 10) updateDoc(roomRef, { phase: 'RESULT' }); else startRound(); }, 4000);
 }
 
+// Event Listeners
 document.getElementById('btn-host').onclick = () => setupRoom(Math.random().toString(36).substr(2,6).toUpperCase(), true);
 document.getElementById('btn-join').onclick = () => {
     const id = document.getElementById('room-id').value.toUpperCase();
@@ -327,7 +320,7 @@ document.getElementById('btn-join').onclick = () => {
 };
 document.getElementById('btn-start-game').onclick = () => { if(isHost) startRound(); };
 
-// --- Canvas描画 (変更なし) ---
+// --- Canvas Drawing (Same as before) ---
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
 let playerPositions = {};
@@ -382,6 +375,7 @@ function gameLoop() {
 
 function updateLeaderboard() {
     const list = document.getElementById('leaderboard'); list.innerHTML = '';
+    if(!players) return;
     [...players].sort((a,b)=>b.score-a.score).forEach((p, i) => {
         let li = document.createElement('li'); if(p.id === myId) li.className = 'my-score';
         li.innerText = `${i+1}. ${p.name}: ${p.score}pt ${p.status === 'ready' ? '✓' : ''}`; list.appendChild(li);
