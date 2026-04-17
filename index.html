@@ -3,261 +3,88 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>マナ・サイクル・コロシアム</title>
+    <title>マナ・サイクル・コロシアム - Ver 1.2</title>
     <style>
-        /* CSSスタイル: 全体レイアウトとログインUI */
-        body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background: #000;
-            font-family: 'Courier New', Courier, monospace;
-            color: #fff;
-            user-select: none;
-        }
-
-        /* ログイン画面 (CLI風) */
-        #login-screen {
-            color: #33ff33;
-            text-shadow: 0 0 5px #33ff33;
-            padding: 30px;
-            max-width: 600px;
-            margin: 50px auto;
-            border: 2px solid #33ff33;
-            background: #051505;
-            box-shadow: 0 0 20px rgba(51, 255, 51, 0.2);
-        }
+        body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; color: #fff; user-select: none; }
+        #login-screen { color: #33ff33; text-shadow: 0 0 5px #33ff33; padding: 30px; max-width: 600px; margin: 50px auto; border: 2px solid #33ff33; background: #051505; box-shadow: 0 0 20px rgba(51, 255, 51, 0.2); }
         #login-screen h1 { text-align: center; border-bottom: 1px dashed #33ff33; padding-bottom: 10px; }
         .input-group { margin: 20px 0; }
-        input[type="text"] {
-            background: #000;
-            color: #33ff33;
-            border: 1px solid #33ff33;
-            padding: 8px;
-            font-family: inherit;
-            width: calc(100% - 20px);
-            font-size: 16px;
-        }
-        button {
-            background: #000;
-            color: #33ff33;
-            border: 1px solid #33ff33;
-            padding: 10px 20px;
-            font-family: inherit;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.2s;
-            width: 100%;
-            margin-bottom: 10px;
-        }
+        input[type="text"] { background: #000; color: #33ff33; border: 1px solid #33ff33; padding: 8px; font-family: inherit; width: calc(100% - 20px); font-size: 16px; }
+        button { background: #000; color: #33ff33; border: 1px solid #33ff33; padding: 10px 20px; font-family: inherit; font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.2s; width: 100%; margin-bottom: 10px; }
         button:hover:not(:disabled) { background: #33ff33; color: #000; }
         button:disabled { border-color: #555; color: #555; cursor: not-allowed; text-shadow: none; }
-        
-        #connection-log {
-            margin-top: 20px;
-            height: 150px;
-            overflow-y: auto;
-            font-size: 14px;
-            border-top: 1px dashed #33ff33;
-            padding-top: 10px;
-        }
-        #connection-log div { margin-bottom: 4px; }
-
-        /* ゲーム画面レイアウト */
-        #game-screen {
-            display: none;
-            width: 100vw;
-            height: 100vh;
-            position: relative;
-        }
+        #connection-log { margin-top: 20px; height: 120px; overflow-y: auto; font-size: 14px; border-top: 1px dashed #33ff33; padding-top: 10px; }
+        #game-screen { display: none; width: 100vw; height: 100vh; position: relative; }
         #game-canvas { display: block; }
-        
-        /* 右側のUIパネル */
-        #ui-panel {
-            position: absolute;
-            right: 0; top: 0;
-            width: 300px; height: 100%;
-            background: rgba(10, 5, 0, 0.9);
-            border-left: 2px solid #5c4033;
-            display: flex;
-            flex-direction: column;
-            box-shadow: -5px 0 15px rgba(0,0,0,0.8);
-        }
-        #ui-panel h3 {
-            margin: 0; padding: 15px;
-            font-size: 18px;
-            color: #e6c200;
-            border-bottom: 1px solid #5c4033;
-            background: rgba(0,0,0,0.5);
-        }
+        #ui-panel { position: absolute; right: 0; top: 0; width: 300px; height: 100%; background: rgba(10, 5, 0, 0.9); border-left: 2px solid #5c4033; display: flex; flex-direction: column; box-shadow: -5px 0 15px rgba(0,0,0,0.8); }
+        #ui-panel h3 { margin: 0; padding: 15px; font-size: 18px; color: #e6c200; border-bottom: 1px solid #5c4033; background: rgba(0,0,0,0.5); }
         #lobby-controls { padding: 15px; border-bottom: 1px solid #5c4033; }
-        #btn-start-game {
-            background: #d35400; color: #fff; border: 1px solid #e67e22;
-        }
-        #btn-start-game:hover { background: #e67e22; color: #000; }
-        
-        .list-container {
-            flex: 1; overflow-y: auto;
-            padding: 10px; margin: 0; list-style: none;
-        }
+        .list-container { flex: 1; overflow-y: auto; padding: 10px; margin: 0; list-style: none; }
         #leaderboard li { margin-bottom: 8px; font-size: 16px; color: #ddd; }
         #leaderboard .my-score { color: #f1c40f; font-weight: bold; text-shadow: 0 0 5px #f1c40f; }
         #action-log { border-top: 2px solid #5c4033; flex: 1.5; }
-        #action-log li { margin-bottom: 6px; font-size: 13px; color: #aaa; line-height: 1.4; }
+        #action-log li { margin-bottom: 6px; font-size: 13px; color: #aaa; line-height: 1.4; border-bottom: 1px solid #222; padding-bottom: 2px; }
         #action-log li .turn-header { color: #2ecc71; font-weight: bold; }
-        
-        /* スクロールバー装飾 */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.5); }
-        ::-webkit-scrollbar-thumb { background: #5c4033; }
     </style>
 </head>
 <body>
 
-<!-- ログイン画面 -->
 <div id="login-screen">
     <h1>マナ・サイクル・コロシアム</h1>
     <div id="connection-log">
-        <div>> SYSTEM: BOOT SEQUENCE INITIATED...</div>
-        <div>> AWAITING DATABASE CONNECTION...</div>
+        <div>> SYSTEM: BOOT SEQUENCE...</div>
     </div>
-    
     <div class="input-group">
         <div>> ENTER USERNAME:</div>
-        <input type="text" id="username" value="Player1">
+        <input type="text" id="username" value="Player">
     </div>
-    
-    <button id="btn-host" disabled>部屋を作る (HOSTとして開始)</button>
-    
-    <div class="input-group" style="margin-top: 30px;">
-        <div>> OR ENTER ROOM ID TO JOIN:</div>
-        <input type="text" id="room-id" placeholder="Ex: A1B2C3">
+    <button id="btn-host" disabled>部屋を作る</button>
+    <div class="input-group" style="margin-top: 20px;">
+        <div>> JOIN ROOM ID:</div>
+        <input type="text" id="room-id" placeholder="EX: A1B2C3">
     </div>
-    <button id="btn-join" disabled>部屋に入る (CLIENTとして参加)</button>
+    <button id="btn-join" disabled>部屋に入る</button>
 </div>
 
-<!-- ゲーム画面 -->
 <div id="game-screen">
     <canvas id="game-canvas"></canvas>
-    
     <div id="ui-panel">
         <div id="lobby-controls" style="display: none;">
-            <div style="color: #2ecc71; font-weight: bold; margin-bottom: 10px;">> LOBBY STAGE</div>
+            <div style="color: #2ecc71; font-weight: bold; margin-bottom: 5px;">> LOBBY STAGE</div>
             <div style="margin-bottom: 10px;">ROOM ID: <span id="display-room-id" style="color:#f1c40f; font-size:18px;"></span></div>
             <button id="btn-start-game">ゲーム開始</button>
         </div>
-        
         <h3>🏆 順位表</h3>
         <ul id="leaderboard" class="list-container"></ul>
-        
         <h3>📜 アクションログ</h3>
         <ul id="action-log" class="list-container"></ul>
     </div>
 </div>
 
 <script type="module">
-/**
- * Firebase Firestore & Game Logic Implementation
- * (Canvas環境のWebSocket制限を回避するため、PeerJSからFirebaseへ移行)
- */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// --- 状態管理・グローバル変数 ---
-let user = null;
-let myId = '';
-let isHost = false;
-let roomRef = null;
-let unsubscribe = null;
-let gameState = null; // Firestoreから同期される最新状態
-
-let players = [];          // 描画用のプレイヤー配列
-let currentRound = 0;
-let gamePhase = 'LOBBY';   // LOBBY, PLAYING, RESOLVING, RESULT
-const MAX_ROUNDS = 10;
-
-// クライアント固有状態
-let myHand = [];
-let myState = 'WAITING';   // SELECTING, WAITING
-let selectedCardIndex = -1;
-let lastRound = 0;
-let lastResolveId = null;
-
-// --- カードデータベース ---
-// ※Firestoreには関数を保存できないため、効果解決時にこのローカルデータを参照します
-const CARDS = [
-    { id: 'c1', name: "Knight's Strike", type: "ATK", color: "#e74c3c", desc: "ランダムな相手から200pt奪う", 
-      effect: (user, ps, logs, parts) => {
-        let targets = ps.filter(p => p.id !== user.id);
-        if(targets.length > 0) {
-            let t = targets[Math.floor(Math.random() * targets.length)];
-            if(t.isDefending) {
-                logs.push(`${user.name}の攻撃! しかし${t.name}のシールドに防がれた!`);
-            } else {
-                t.score -= 200; user.score += 200;
-                logs.push(`${user.name}は${t.name}から200pt奪った!`);
-                parts.push({from: t.id, to: user.id, color: '#e74c3c'});
-            }
-        }
-    }},
-    { id: 'c2', name: "Holy Barrier", type: "DEF", color: "#3498db", desc: "このターンのポイント減少を完全に防ぐ", 
-      effect: () => {} 
-    },
-    { id: 'c3', name: "Mage's Transfer", type: "MAG", color: "#9b59b6", desc: "ランダムな相手とスコアを平均化する", 
-      effect: (user, ps, logs, parts) => {
-        let targets = ps.filter(p => p.id !== user.id);
-        if(targets.length > 0) {
-            let t = targets[Math.floor(Math.random() * targets.length)];
-            if(t.isDefending) {
-                logs.push(`${user.name}の魔術! しかし${t.name}は防御した!`);
-            } else {
-                let avg = Math.floor((user.score + t.score) / 2);
-                user.score = avg; t.score = avg;
-                logs.push(`${user.name}は${t.name}とスコアを同調させた。`);
-                parts.push({from: user.id, to: t.id, color: '#9b59b6'});
-                parts.push({from: t.id, to: user.id, color: '#9b59b6'});
-            }
-        }
-    }},
-    { id: 'c4', name: "Mana Drain", type: "MAG", color: "#8e44ad", desc: "全員から50ptずつ吸収する", 
-      effect: (user, ps, logs, parts) => {
-        let total = 0;
-        ps.forEach(p => {
-            if(p.id !== user.id) {
-                if(!p.isDefending) {
-                    p.score -= 50; total += 50;
-                    parts.push({from: p.id, to: user.id, color: '#8e44ad'});
-                }
-            }
-        });
-        user.score += total;
-        logs.push(`${user.name}は全体から計${total}ptを吸収した!`);
-    }},
-    { id: 'c5', name: "Quick Slash", type: "ATK", color: "#c0392b", desc: "右隣のプレイヤーから300pt奪う", 
-      effect: (user, ps, logs, parts) => {
-        let idx = ps.findIndex(p => p.id === user.id);
-        let tIdx = (idx + 1) % ps.length;
-        let t = ps[tIdx];
-        if(t && t.id !== user.id) {
-            if(t.isDefending) {
-                logs.push(`${user.name}の斬撃! しかし${t.name}は防御した。`);
-            } else {
-                t.score -= 300; user.score += 300;
-                logs.push(`${user.name}は右隣の${t.name}から300pt奪った!`);
-                parts.push({from: t.id, to: user.id, color: '#c0392b'});
-            }
-        }
-    }}
-];
-
-// --- 初期化 & Firebase通信 ---
+// --- Config (Placeholder) ---
 const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'mana-cycle-col';
+
+let myId = '';
+let isHost = false;
+let roomRef = null;
+let currentRoomId = '';
+let localLogCount = 0;
+let gameState = null;
+let players = [];
+let myHand = [];
+let myState = 'SELECTING';
+let currentRound = 0;
+let lastRound = 0;
+let lastResolveId = null;
 
 function logCLI(msg) {
     const el = document.getElementById('connection-log');
@@ -267,279 +94,148 @@ function logCLI(msg) {
     el.scrollTop = el.scrollHeight;
 }
 
-window.onload = async () => {
-    try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-            await signInAnonymously(auth);
-        }
-        user = auth.currentUser;
+// 認証完了まで待機
+onAuthStateChanged(auth, (user) => {
+    if (user) {
         myId = user.uid;
-        logCLI(`SYSTEM: DATABASE CONNECTED. ID: [${myId.substring(0,6)}]`);
-        
+        logCLI(`SYSTEM: AUTHENTICATED [${myId.substring(0,6)}]`);
         document.getElementById('btn-host').disabled = false;
         document.getElementById('btn-join').disabled = false;
-    } catch(e) {
-        logCLI(`ERROR: AUTH FAILED. ${e.message}`);
+    } else {
+        signInAnonymously(auth).catch(e => logCLI(`ERROR: ${e.message}`));
+    }
+});
+
+// --- カードデータ ---
+const CARDS = [
+    { id: 'c1', name: "Knight's Strike", type: "ATK", color: "#e74c3c", desc: "ランダムな相手から200pt奪う" },
+    { id: 'c2', name: "Holy Barrier", type: "DEF", color: "#3498db", desc: "ターン内の減少を防ぐ" },
+    { id: 'c3', name: "Mage's Transfer", type: "MAG", color: "#9b59b6", desc: "ランダムな相手とスコア平均化" },
+    { id: 'c4', name: "Mana Drain", type: "MAG", color: "#8e44ad", desc: "全員から50ptずつ吸収" },
+    { id: 'c5', name: "Quick Slash", type: "ATK", color: "#c0392b", desc: "右隣のプレイヤーから300pt奪う" }
+];
+
+const CARD_EFFECTS = {
+    'c1': (u, ps, logs, parts) => {
+        let targets = ps.filter(p => p.id !== u.id);
+        if(targets.length > 0){
+            let t = targets[Math.floor(Math.random() * targets.length)];
+            if(t.isDefending) logs.push(`${u.name}の攻撃! ${t.name}に防がれた!`);
+            else { t.score -= 200; u.score += 200; logs.push(`${u.name}は${t.name}から200pt奪った!`); parts.push({from: t.id, to: u.id, color: '#e74c3c'}); }
+        }
+    },
+    'c3': (u, ps, logs, parts) => {
+        let targets = ps.filter(p => p.id !== u.id);
+        if(targets.length > 0){
+            let t = targets[Math.floor(Math.random() * targets.length)];
+            if(t.isDefending) logs.push(`${u.name}の魔術! ${t.name}は防御中。`);
+            else { let avg = Math.floor((u.score + t.score) / 2); u.score = avg; t.score = avg; logs.push(`${u.name}と${t.name}が同調した。`); parts.push({from: u.id, to: t.id, color: '#9b59b6'}); }
+        }
+    },
+    'c4': (u, ps, logs, parts) => {
+        let total = 0;
+        ps.forEach(p => { if(p.id !== u.id && !p.isDefending){ p.score -= 50; total += 50; parts.push({from: p.id, to: u.id, color: '#8e44ad'}); }});
+        u.score += total; logs.push(`${u.name}は全員から${total}pt吸収した!`);
+    },
+    'c5': (u, ps, logs, parts) => {
+        let idx = ps.findIndex(p => p.id === u.id);
+        let t = ps[(idx + 1) % ps.length];
+        if(t && t.id !== u.id){
+            if(t.isDefending) logs.push(`${u.name}の斬撃! ${t.name}は防御した。`);
+            else { t.score -= 300; u.score += 300; logs.push(`${u.name}は右隣の${t.name}から300pt奪った!`); parts.push({from: t.id, to: u.id, color: '#c0392b'}); }
+        }
     }
 };
 
-function generateId() {
-    return Math.random().toString(36).substr(2, 6).toUpperCase();
-}
-
-document.getElementById('btn-host').addEventListener('click', async () => {
-    if(!user) return;
-    const name = document.getElementById('username').value || 'Host';
-    const roomId = generateId();
-    isHost = true;
-    
-    logCLI(`CREATING ROOM [${roomId}]...`);
-    roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'mana_cycle_rooms', roomId);
-    
-    // 初期状態の保存
-    const initialState = {
-        hostId: myId,
-        phase: 'LOBBY',
-        currentRound: 0,
-        players: { [myId]: { name: name, score: 1000, isDefending: false } },
-        playerStatus: { [myId]: 'lobby' },
-        playerCard: { [myId]: null },
-        hands: {},
-        logs: [],
-        particles: [],
-        resolveId: null
-    };
-    
-    await setDoc(roomRef, initialState);
-    
-    document.getElementById('display-room-id').innerText = roomId;
-    document.getElementById('lobby-controls').style.display = 'block';
-    
-    listenToRoom();
-    switchToGameScreen();
-});
-
-document.getElementById('btn-join').addEventListener('click', async () => {
-    if(!user) return;
-    const name = document.getElementById('username').value || 'Player';
-    const roomId = document.getElementById('room-id').value.toUpperCase();
-    if(!roomId) { logCLI('ERROR: ROOM ID IS REQUIRED.'); return; }
-    
-    isHost = false;
-    logCLI(`CONNECTING TO ROOM [${roomId}]...`);
+// --- 通信ロジック ---
+async function setupRoom(roomId, asHost) {
+    currentRoomId = roomId;
+    isHost = asHost;
     roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'mana_cycle_rooms', roomId);
     
     const snap = await getDoc(roomRef);
-    if (!snap.exists()) {
-        logCLI("ERROR: ROOM NOT FOUND.");
-        return;
-    }
-    
-    const data = snap.data();
-    if (data.phase !== 'LOBBY') {
-        logCLI("ERROR: GAME ALREADY STARTED.");
-        return;
-    }
-    if (Object.keys(data.players).length >= 10) {
-        logCLI("ERROR: ROOM IS FULL.");
-        return;
-    }
-    
-    // 自身を参加者として追加 (競合防止のため部分更新)
-    await updateDoc(roomRef, {
-        [`players.${myId}`]: { name: name, score: 1000, isDefending: false },
-        [`playerStatus.${myId}`]: 'lobby'
-    });
-    
-    listenToRoom();
-    switchToGameScreen();
-});
+    const name = document.getElementById('username').value || 'Unknown';
 
-function switchToGameScreen() {
+    if (asHost) {
+        await setDoc(roomRef, {
+            hostId: myId, phase: 'LOBBY', currentRound: 0,
+            players: { [myId]: { name, score: 1000, isDefending: false } },
+            playerStatus: { [myId]: 'lobby' },
+            playerCard: { [myId]: null },
+            hands: {}, logs: [`<span class="turn-header">WELCOME TO ${roomId}</span>`], resolveId: 'init'
+        });
+    } else {
+        if (!snap.exists()) { alert("部屋が見つかりません"); return; }
+        // 既存プレイヤーなら上書きせず復帰、新規なら追加
+        const data = snap.data();
+        if (!data.players[myId]) {
+            await updateDoc(roomRef, {
+                [`players.${myId}`]: { name, score: 1000, isDefending: false },
+                [`playerStatus.${myId}`]: data.phase === 'LOBBY' ? 'lobby' : 'thinking'
+            });
+        }
+    }
+
+    listenToRoom();
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('game-screen').style.display = 'block';
+    if(isHost) document.getElementById('lobby-controls').style.display = 'block';
+    document.getElementById('display-room-id').innerText = roomId;
     resizeCanvas();
     requestAnimationFrame(gameLoop);
 }
 
-// --- リアルタイム同期リスナー ---
 function listenToRoom() {
-    unsubscribe = onSnapshot(roomRef, (snap) => {
+    onSnapshot(roomRef, (snap) => {
         if (!snap.exists()) return;
         gameState = snap.data();
-        
-        // ローカル変数へマッピング
         currentRound = gameState.currentRound;
-        gamePhase = gameState.phase;
-        
+
+        // プレイヤー配列の構築
         players = Object.keys(gameState.players).map(id => ({
-            id: id,
-            name: gameState.players[id].name,
-            score: gameState.players[id].score,
-            isDefending: gameState.players[id].isDefending,
+            id, ...gameState.players[id],
             status: gameState.playerStatus[id],
             playedCardId: gameState.playerCard[id]
         }));
-        
-        // 手札の復元 (ID配列からカードオブジェクトへ)
+
+        // 手札の同期
         if (gameState.hands && gameState.hands[myId]) {
-            myHand = gameState.hands[myId].map(cardId => CARDS.find(c => c.id === cardId)).filter(Boolean);
-        } else {
-            myHand = [];
+            myHand = gameState.hands[myId].map(cid => CARDS.find(c => c.id === cid)).filter(Boolean);
         }
-        
-        // ラウンド開始の検知
-        if (currentRound > lastRound && gamePhase === 'PLAYING') {
+
+        // アクションログの同期（差分のみ追加）
+        if (gameState.logs && gameState.logs.length > localLogCount) {
+            for (let i = localLogCount; i < gameState.logs.length; i++) {
+                addActionLog(gameState.logs[i]);
+            }
+            localLogCount = gameState.logs.length;
+        }
+
+        // エフェクト演出
+        if (gameState.resolveId && gameState.resolveId !== lastResolveId) {
+            lastResolveId = gameState.resolveId;
+            if (gameState.lastParticles) {
+                gameState.lastParticles.forEach(p => spawnParticle(p));
+            }
+        }
+
+        // ラウンド開始検知
+        if (currentRound > lastRound && gameState.phase === 'PLAYING') {
             lastRound = currentRound;
             myState = 'SELECTING';
             selectedCardIndex = -1;
         }
-        
-        // ログ・エフェクトの検知
-        if (gameState.resolveId && gameState.resolveId !== lastResolveId) {
-            lastResolveId = gameState.resolveId;
-            if (gameState.particles) {
-                gameState.particles.forEach(p => {
-                    let fromPos = playerPositions[p.from];
-                    let toPos = playerPositions[p.to];
-                    if(fromPos && toPos) {
-                        activeParticles.push({
-                            type: p.type || 'projectile',
-                            startX: fromPos.x, startY: fromPos.y,
-                            targetX: toPos.x, targetY: toPos.y,
-                            color: p.color,
-                            progress: 0,
-                            speed: 0.015 + Math.random() * 0.01
-                        });
-                    }
-                });
-            }
-            if (gameState.logs) {
-                gameState.logs.forEach(l => addActionLog(l));
-            }
-        }
-        
+
         updateLeaderboard();
         calculatePositions();
-        
-        // ホストのみ：全員がReadyかチェックして解決処理へ
-        if (isHost && gamePhase === 'PLAYING') {
-            const allReady = players.every(p => p.status === 'ready');
-            if (allReady && players.length > 0) {
+
+        // ホスト：全員準備完了チェック
+        if (isHost && gameState.phase === 'PLAYING') {
+            const activePlayers = players.filter(p => p.status !== 'away');
+            if (activePlayers.length > 0 && activePlayers.every(p => p.status === 'ready')) {
                 resolveRound();
             }
         }
-    }, (error) => {
-        console.error("Firestore Error:", error);
-    });
-}
-
-// --- ホスト用ロジック ---
-document.getElementById('btn-start-game').addEventListener('click', () => {
-    if(!isHost) return;
-    if(players.length < 1) { alert("プレイヤーが必要です。"); return; }
-    document.getElementById('lobby-controls').style.display = 'none';
-    startRound();
-});
-
-function drawCards(num) {
-    let h = [];
-    for(let i=0; i<num; i++) h.push(CARDS[Math.floor(Math.random() * CARDS.length)].id);
-    return h;
-}
-
-async function startRound() {
-    let updates = {
-        phase: 'PLAYING',
-        currentRound: gameState.currentRound + 1,
-        logs: [`<span class="turn-header">--- ROUND ${gameState.currentRound + 1} START ---</span>`],
-        particles: [],
-        resolveId: 'start_' + Date.now()
-    };
-    
-    // 全員の状態をリセットし、手札を配る
-    Object.keys(gameState.players).forEach(id => {
-        updates[`playerStatus.${id}`] = 'thinking';
-        updates[`playerCard.${id}`] = null;
-        updates[`players.${id}.isDefending`] = false;
-        updates[`hands.${id}`] = drawCards(5);
-    });
-    
-    await updateDoc(roomRef, updates);
-}
-
-async function resolveRound() {
-    // 状態が勝手に進まないようフェーズ変更を即時反映
-    await updateDoc(roomRef, { phase: 'RESOLVING' });
-    
-    let logs = [];
-    let parts = [];
-    
-    // スコア計算用のディープコピー
-    let pList = JSON.parse(JSON.stringify(players));
-    
-    // 1. DEFカードの事前処理
-    pList.forEach(p => {
-        p.isDefending = false;
-        if(p.playedCardId) {
-            let cardObj = CARDS.find(c => c.id === p.playedCardId);
-            if(cardObj && cardObj.type === 'DEF') {
-                p.isDefending = true;
-                logs.push(`🛡️ ${p.name}は防御態勢に入った。`);
-                parts.push({from: p.id, to: p.id, color: '#00ffff', type: 'shield'});
-            }
-        }
-    });
-
-    // 2. ATK/MAGカードの処理
-    pList.forEach(p => {
-        if(p.playedCardId) {
-            let cardObj = CARDS.find(c => c.id === p.playedCardId);
-            if(cardObj && cardObj.type !== 'DEF') {
-                if(cardObj.effect) {
-                    cardObj.effect(p, pList, logs, parts);
-                }
-            }
-        }
-    });
-
-    // 結果の送信(部分更新)
-    let updates = {
-        logs: logs,
-        particles: parts,
-        resolveId: Date.now().toString()
-    };
-    
-    pList.forEach(p => {
-        updates[`players.${p.id}.score`] = p.score;
-        updates[`players.${p.id}.isDefending`] = p.isDefending;
-    });
-    
-    await updateDoc(roomRef, updates);
-
-    // アニメーション待機後、次へ
-    setTimeout(() => {
-        if (gameState.currentRound >= MAX_ROUNDS) {
-            updateDoc(roomRef, { phase: 'RESULT' });
-        } else {
-            startRound();
-        }
-    }, 4500);
-}
-
-// --- クライアント/UI 更新ロジック ---
-function updateLeaderboard() {
-    const list = document.getElementById('leaderboard');
-    list.innerHTML = '';
-    let sorted = [...players].sort((a,b) => b.score - a.score);
-    sorted.forEach((p, i) => {
-        let li = document.createElement('li');
-        li.innerText = `${i+1}. ${p.name} : ${p.score}pt`;
-        if(p.id === myId) li.className = 'my-score';
-        if(p.status === 'ready' && gamePhase === 'PLAYING') li.innerText += ' ✅';
-        list.appendChild(li);
     });
 }
 
@@ -551,28 +247,79 @@ function addActionLog(msg) {
     list.scrollTop = list.scrollHeight;
 }
 
-async function submitCard() {
-    if (!roomRef) return;
-    const card = myHand[selectedCardIndex];
-    myState = 'WAITING';
-    
-    // 自身の状態だけを更新（競合回避）
-    await updateDoc(roomRef, {
-        [`playerStatus.${myId}`]: 'ready',
-        [`playerCard.${myId}`]: card.id
+// --- ホスト処理: ラウンド解決 ---
+async function startRound() {
+    let nextRound = gameState.currentRound + 1;
+    let updates = {
+        phase: 'PLAYING', currentRound: nextRound,
+        logs: arrayUnion(`<span class="turn-header">--- ROUND ${nextRound} START ---</span>`),
+        lastParticles: []
+    };
+    players.forEach(p => {
+        updates[`playerStatus.${p.id}`] = 'thinking';
+        updates[`playerCard.${p.id}`] = null;
+        updates[`players.${p.id}.isDefending`] = false;
+        updates[`hands.${p.id}`] = Array(5).fill(0).map(() => CARDS[Math.floor(Math.random()*CARDS.length)].id);
     });
+    await updateDoc(roomRef, updates);
 }
 
-// --- Canvas 描画ロジック ---
+async function resolveRound() {
+    await updateDoc(roomRef, { phase: 'RESOLVING' });
+    let newLogs = [];
+    let newParts = [];
+    let pData = JSON.parse(JSON.stringify(players));
+
+    // 1. 防御
+    pData.forEach(p => {
+        if(p.playedCardId === 'c2') {
+            p.isDefending = true;
+            newLogs.push(`🛡️ ${p.name}は防御した`);
+            newParts.push({from: p.id, to: p.id, color: '#00ffff', type: 'shield'});
+        }
+    });
+
+    // 2. 攻撃・魔術
+    pData.forEach(p => {
+        if(p.playedCardId && p.playedCardId !== 'c2') {
+            const fx = CARD_EFFECTS[p.playedCardId];
+            if(fx) fx(p, pData, newLogs, newParts);
+        }
+    });
+
+    let updates = {
+        logs: arrayUnion(...newLogs),
+        lastParticles: newParts,
+        resolveId: Date.now().toString()
+    };
+    pData.forEach(p => {
+        updates[`players.${p.id}.score`] = p.score;
+        updates[`players.${p.id}.isDefending`] = p.isDefending;
+    });
+
+    await updateDoc(roomRef, updates);
+
+    setTimeout(() => {
+        if (currentRound >= 10) updateDoc(roomRef, { phase: 'RESULT' });
+        else startRound();
+    }, 4000);
+}
+
+// --- ボタンイベント ---
+document.getElementById('btn-host').onclick = () => setupRoom(Math.random().toString(36).substr(2,6).toUpperCase(), true);
+document.getElementById('btn-join').onclick = () => {
+    const id = document.getElementById('room-id').value.toUpperCase();
+    if(id) setupRoom(id, false);
+};
+document.getElementById('btn-start-game').onclick = () => { if(isHost) startRound(); };
+
+// --- Canvas描画ロジック ---
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
-
 let playerPositions = {};
-let handRects = [];
-let hoveredCardIndex = -1;
-let btnRect = null;
 let activeParticles = [];
-let magicRotation = 0;
+let selectedCardIndex = -1;
+let hoveredCardIndex = -1;
 
 function resizeCanvas() {
     canvas.width = window.innerWidth;
@@ -582,282 +329,118 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 
 function calculatePositions() {
-    const uiWidth = 300;
-    const gameCx = (canvas.width - uiWidth) / 2;
-    const cy = canvas.height / 2;
-    const radius = Math.min(gameCx, cy) * 0.65;
-
-    playerPositions = {};
+    if(!players.length) return;
+    const gameW = canvas.width - 300;
+    const cx = gameW / 2;
+    const cy = canvas.height / 2 - 40;
+    const r = Math.min(gameW, canvas.height) * 0.3;
     players.forEach((p, i) => {
-        const theta = -Math.PI / 2 + (Math.PI * 2 / players.length) * i;
-        playerPositions[p.id] = {
-            x: gameCx + radius * Math.cos(theta),
-            y: cy + radius * Math.sin(theta) - 50
-        };
+        const ang = -Math.PI/2 + (Math.PI*2/players.length)*i;
+        playerPositions[p.id] = { x: cx + r*Math.cos(ang), y: cy + r*Math.sin(ang) };
     });
 }
 
-function drawBackground() {
-    let grad = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 0, canvas.width/2, canvas.height/2, canvas.width);
-    grad.addColorStop(0, '#2a1e12');
-    grad.addColorStop(1, '#0a0500');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-}
-
-function drawMagicCircle(cx, cy, radius) {
-    magicRotation += 0.002;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(magicRotation);
-    
-    ctx.strokeStyle = 'rgba(230, 194, 0, 0.15)';
-    ctx.lineWidth = 2;
-    
-    ctx.beginPath(); ctx.arc(0, 0, radius * 0.3, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(0, 0, radius * 0.28, 0, Math.PI * 2); ctx.stroke();
-    
-    for(let i=0; i<8; i++) {
-        ctx.beginPath();
-        ctx.moveTo(radius * 0.3 * Math.cos(i * Math.PI / 4), radius * 0.3 * Math.sin(i * Math.PI / 4));
-        ctx.lineTo(radius * 0.3 * Math.cos((i+3) * Math.PI / 4), radius * 0.3 * Math.sin((i+3) * Math.PI / 4));
-        ctx.stroke();
-    }
-    ctx.restore();
-}
-
-function drawPlayers() {
-    players.forEach(p => {
-        const pos = playerPositions[p.id];
-        if(!pos) return;
-        
-        ctx.save();
-        ctx.translate(pos.x, pos.y);
-        
-        if(p.status === 'ready' && gamePhase === 'PLAYING') {
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = '#2ecc71';
-            ctx.fillStyle = '#2ecc71';
-        } else {
-            ctx.fillStyle = p.id === myId ? '#3498db' : '#7f8c8d';
-        }
-        
-        ctx.beginPath();
-        ctx.moveTo(0, -20); ctx.lineTo(15, 0); ctx.lineTo(0, 20); ctx.lineTo(-15, 0);
-        ctx.closePath();
-        ctx.fill();
-        
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = '#ecf0f1';
-        ctx.font = '14px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(p.name, 0, -30);
-        
-        ctx.fillStyle = '#f1c40f';
-        ctx.font = 'bold 16px Arial';
-        ctx.fillText(p.score + ' pt', 0, 40);
-        
-        ctx.restore();
-    });
-}
-
-function wrapText(context, text, x, y, maxWidth, lineHeight) {
-    let chars = text.split('');
-    let line = '';
-    for(let n = 0; n < chars.length; n++) {
-        let testLine = line + chars[n];
-        let metrics = context.measureText(testLine);
-        if (metrics.width > maxWidth && n > 0) {
-            context.fillText(line, x, y);
-            line = chars[n];
-            y += lineHeight;
-        } else {
-            line = testLine;
-        }
-    }
-    context.fillText(line, x, y);
-}
-
-function drawHand() {
-    if(gamePhase !== 'PLAYING') return;
-    
-    const cw = 110; const ch = 150; const margin = 15;
-    const gameW = canvas.width - 300;
-    const startX = gameW / 2 - ((cw * 5 + margin * 4) / 2);
-    const y = canvas.height - ch - 20;
-
-    handRects = [];
-    btnRect = null;
-
-    myHand.forEach((card, i) => {
-        const x = startX + i * (cw + margin);
-        handRects.push({x, y, w: cw, h: ch, card});
-        
-        const isSelected = (i === selectedCardIndex);
-        const isHovered = (i === hoveredCardIndex);
-        const drawY = isSelected ? y - 25 : (isHovered ? y - 10 : y);
-        
-        ctx.fillStyle = isSelected ? '#3e2723' : '#2c1e16';
-        ctx.fillRect(x, drawY, cw, ch);
-        
-        ctx.strokeStyle = card.color;
-        ctx.lineWidth = isSelected ? 4 : 2;
-        ctx.strokeRect(x, drawY, cw, ch);
-        
-        ctx.fillStyle = card.color;
-        ctx.font = 'bold 12px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(`[ ${card.type} ]`, x + cw/2, drawY + 20);
-        
-        ctx.fillStyle = '#fff';
-        ctx.font = '13px Arial';
-        wrapText(ctx, card.name, x + cw/2, drawY + 50, cw - 10, 16);
-        
-        ctx.fillStyle = '#aaa';
-        ctx.font = '11px Arial';
-        wrapText(ctx, card.desc, x + cw/2, drawY + 90, cw - 10, 14);
-    });
-
-    const btnX = gameW / 2 - 80;
-    const btnY = y - 60;
-    
-    if(selectedCardIndex !== -1 && myState === 'SELECTING') {
-        btnRect = {x: btnX, y: btnY, w: 160, h: 40};
-        ctx.fillStyle = '#d35400';
-        ctx.fillRect(btnX, btnY, 160, 40);
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 16px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText("カードを伏せる", btnX + 80, btnY + 26);
-    } else if (myState === 'WAITING') {
-        ctx.fillStyle = '#2ecc71';
-        ctx.font = 'bold 16px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText("他のプレイヤーを待機中...", gameW / 2, btnY + 26);
-    }
-}
-
-function updateAndDrawParticles() {
-    for(let i = activeParticles.length - 1; i >= 0; i--) {
-        let p = activeParticles[i];
-        
-        if(p.type === 'shield') {
-            p.progress += 0.01;
-            if(p.progress >= 1) { activeParticles.splice(i, 1); continue; }
-            
-            ctx.beginPath();
-            ctx.arc(p.startX, p.startY, 35 + Math.sin(p.progress * Math.PI) * 10, 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(0, 255, 255, ${1 - p.progress})`;
-            ctx.lineWidth = 4;
-            ctx.stroke();
-        } else {
-            p.progress += p.speed;
-            if(p.progress >= 1) { activeParticles.splice(i, 1); continue; }
-            
-            let ease = p.progress < .5 ? 2 * p.progress * p.progress : -1 + (4 - 2 * p.progress) * p.progress;
-            let cx = p.startX + (p.targetX - p.startX) * ease;
-            let cy = p.startY + (p.targetY - p.startY) * ease;
-            
-            ctx.beginPath();
-            ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-            ctx.fillStyle = p.color;
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = p.color;
-            ctx.fill();
-            ctx.shadowBlur = 0;
-            
-            ctx.beginPath();
-            ctx.moveTo(cx, cy);
-            ctx.lineTo(cx - (p.targetX - p.startX)*0.05, cy - (p.targetY - p.startY)*0.05);
-            ctx.strokeStyle = p.color;
-            ctx.lineWidth = 3;
-            ctx.stroke();
-        }
-    }
-}
-
-function drawResult() {
-    const gameW = canvas.width - 300;
-    ctx.fillStyle = 'rgba(0,0,0,0.85)';
-    ctx.fillRect(0, 0, gameW, canvas.height);
-    
-    ctx.fillStyle = '#f1c40f';
-    ctx.font = 'bold 48px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText("GAME FINISHED", gameW / 2, canvas.height / 2 - 50);
-    
-    let sorted = [...players].sort((a,b) => b.score - a.score);
-    if(sorted.length > 0) {
-        ctx.fillStyle = '#fff';
-        ctx.font = '32px Arial';
-        ctx.fillText(`WINNER: ${sorted[0].name} (${sorted[0].score}pt)`, gameW / 2, canvas.height / 2 + 30);
-    }
+function spawnParticle(p) {
+    const from = playerPositions[p.from];
+    const to = playerPositions[p.to];
+    if(!from || !to) return;
+    activeParticles.push({ ...p, startX: from.x, startY: from.y, targetX: to.x, targetY: to.y, progress: 0 });
 }
 
 function gameLoop() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
     const gameW = canvas.width - 300;
-    
-    drawBackground();
-    
-    if(gamePhase === 'LOBBY') {
-        drawMagicCircle(gameW / 2, canvas.height / 2, Math.min(gameW, canvas.height)*0.6);
-        drawPlayers();
-        ctx.fillStyle = '#fff';
-        ctx.font = '24px Courier New';
-        ctx.textAlign = 'center';
-        ctx.fillText("プレイヤーの参加を待機中...", gameW / 2, canvas.height / 2);
-    } else if (gamePhase === 'PLAYING' || gamePhase === 'RESOLVING') {
-        drawMagicCircle(gameW / 2, canvas.height / 2 - 50, Math.min(gameW, canvas.height)*0.65);
-        updateAndDrawParticles();
-        drawPlayers();
-        drawHand();
-        
-        ctx.fillStyle = 'rgba(255,255,255,0.2)';
-        ctx.font = 'bold 120px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(`R${currentRound}`, gameW / 2, canvas.height / 2 + 30);
-    } else if (gamePhase === 'RESULT') {
-        drawMagicCircle(gameW / 2, canvas.height / 2, Math.min(gameW, canvas.height)*0.6);
-        drawPlayers();
-        drawResult();
+    ctx.fillStyle = '#0a0500';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if(!gameState) { requestAnimationFrame(gameLoop); return; }
+
+    // プレイヤー描画
+    players.forEach(p => {
+        const pos = playerPositions[p.id];
+        if(!pos) return;
+        ctx.fillStyle = p.status === 'ready' ? '#2ecc71' : (p.id === myId ? '#3498db' : '#7f8c8d');
+        ctx.beginPath(); ctx.arc(pos.x, pos.y, 15, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '14px Arial';
+        ctx.fillText(p.name, pos.x, pos.y - 25);
+        ctx.fillStyle = '#f1c40f'; ctx.fillText(p.score + 'pt', pos.x, pos.y + 35);
+    });
+
+    // 手札描画
+    if(gameState.phase === 'PLAYING') {
+        const cardW = 100, cardH = 140, margin = 10;
+        const startX = gameW/2 - (cardW*5+margin*4)/2;
+        myHand.forEach((c, i) => {
+            const x = startX + i*(cardW+margin);
+            const y = canvas.height - 160 + (selectedCardIndex === i ? -20 : 0);
+            ctx.fillStyle = '#1a1a1a'; ctx.strokeStyle = c.color; ctx.lineWidth = (hoveredCardIndex === i ? 4 : 2);
+            ctx.fillRect(x, y, cardW, cardH); ctx.strokeRect(x, y, cardW, cardH);
+            ctx.fillStyle = c.color; ctx.font = 'bold 12px Arial'; ctx.fillText(c.type, x + cardW/2, y + 20);
+            ctx.fillStyle = '#fff'; ctx.font = '11px Arial'; ctx.fillText(c.name, x + cardW/2, y + 50);
+        });
+        if(selectedCardIndex !== -1 && myState === 'SELECTING') {
+            ctx.fillStyle = '#d35400'; ctx.fillRect(gameW/2-60, canvas.height-220, 120, 30);
+            ctx.fillStyle = '#fff'; ctx.fillText("決定", gameW/2, canvas.height-200);
+        }
     }
-    
+
+    // エフェクト描画
+    for(let i=activeParticles.length-1; i>=0; i--){
+        let p = activeParticles[i]; p.progress += 0.02;
+        if(p.progress >= 1) { activeParticles.splice(i,1); continue; }
+        let cx = p.startX + (p.targetX-p.startX)*p.progress;
+        let cy = p.startY + (p.targetY-p.startY)*p.progress;
+        ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI*2); ctx.fill();
+    }
+
+    if(gameState.phase === 'RESULT') {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0,0,gameW,canvas.height);
+        ctx.fillStyle = '#f1c40f'; ctx.font = '40px Arial'; ctx.fillText("GAME OVER", gameW/2, canvas.height/2);
+    }
+
     requestAnimationFrame(gameLoop);
 }
 
-// --- 入力イベント (Canvas) ---
-canvas.addEventListener('mousemove', e => {
-    if(gamePhase !== 'PLAYING') return;
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    
-    hoveredCardIndex = -1;
-    handRects.forEach((pos, i) => {
-        if(mx >= pos.x && mx <= pos.x + pos.w && my >= pos.y && my <= pos.y + pos.h) {
-            hoveredCardIndex = i;
-        }
+function updateLeaderboard() {
+    const list = document.getElementById('leaderboard');
+    list.innerHTML = '';
+    [...players].sort((a,b)=>b.score-a.score).forEach((p, i) => {
+        let li = document.createElement('li');
+        if(p.id === myId) li.className = 'my-score';
+        li.innerText = `${i+1}. ${p.name}: ${p.score}pt ${p.status === 'ready' ? '✓' : ''}`;
+        list.appendChild(li);
     });
-});
+}
 
-canvas.addEventListener('click', e => {
-    if(gamePhase !== 'PLAYING') return;
+canvas.addEventListener('mousemove', e => {
+    const gameW = canvas.width - 300;
     const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    
-    if(hoveredCardIndex !== -1 && myState === 'SELECTING') {
-        selectedCardIndex = hoveredCardIndex;
-    }
-    
-    if(btnRect && selectedCardIndex !== -1 && myState === 'SELECTING') {
-        if(mx >= btnRect.x && mx <= btnRect.x + btnRect.w && my >= btnRect.y && my <= btnRect.y + btnRect.h) {
-            submitCard();
-        }
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    hoveredCardIndex = -1;
+    if(my > canvas.height - 180 && mx < gameW) {
+        const cardW = 110;
+        const startX = gameW/2 - (cardW*5)/2;
+        const idx = Math.floor((mx - startX) / cardW);
+        if(idx >= 0 && idx < 5) hoveredCardIndex = idx;
     }
 });
 
+canvas.addEventListener('click', async e => {
+    if(myState !== 'SELECTING') return;
+    const gameW = canvas.width - 300;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    
+    if(hoveredCardIndex !== -1) selectedCardIndex = hoveredCardIndex;
+    
+    // 決定ボタンクリック
+    if(selectedCardIndex !== -1 && mx > gameW/2-60 && mx < gameW/2+60 && my > canvas.height-220 && my < canvas.height-190) {
+        myState = 'WAITING';
+        await updateDoc(roomRef, {
+            [`playerStatus.${myId}`]: 'ready',
+            [`playerCard.${myId}`]: myHand[selectedCardIndex].id
+        });
+    }
+});
 </script>
 </body>
 </html>
