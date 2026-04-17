@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マナ・サイクル・コロシアム</title>
+    <!-- PeerJS WebRTCライブラリの読み込み -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        /* CSSスタイル: 全体レイアウトとログインUI */
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Courier New', Courier, monospace;
+            color: #fff;
+            user-select: none;
+        }
+
+        /* ログイン画面 (CLI風) */
+        #login-screen {
+            color: #33ff33;
+            text-shadow: 0 0 5px #33ff33;
+            padding: 30px;
+            max-width: 600px;
+            margin: 50px auto;
+            border: 2px solid #33ff33;
+            background: #051505;
+            box-shadow: 0 0 20px rgba(51, 255, 51, 0.2);
+        }
+        #login-screen h1 { text-align: center; border-bottom: 1px dashed #33ff33; padding-bottom: 10px; }
+        .input-group { margin: 20px 0; }
+        input[type="text"] {
+            background: #000;
+            color: #33ff33;
+            border: 1px solid #33ff33;
+            padding: 8px;
+            font-family: inherit;
+            width: calc(100% - 20px);
+            font-size: 16px;
+        }
+        button {
+            background: #000;
+            color: #33ff33;
+            border: 1px solid #33ff33;
+            padding: 10px 20px;
+            font-family: inherit;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        button:hover { background: #33ff33; color: #000; }
+        
+        #connection-log {
+            margin-top: 20px;
+            height: 150px;
+            overflow-y: auto;
+            font-size: 14px;
+            border-top: 1px dashed #33ff33;
+            padding-top: 10px;
+        }
+        #connection-log div { margin-bottom: 4px; }
+
+        /* ゲーム画面レイアウト */
+        #game-screen {
+            display: none;
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        #game-canvas { display: block; }
+        
+        /* 右側のUIパネル */
+        #ui-panel {
+            position: absolute;
+            right: 0; top: 0;
+            width: 300px; height: 100%;
+            background: rgba(10, 5, 0, 0.9);
+            border-left: 2px solid #5c4033;
+            display: flex;
+            flex-direction: column;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.8);
+        }
+        #ui-panel h3 {
+            margin: 0; padding: 15px;
+            font-size: 18px;
+            color: #e6c200;
+            border-bottom: 1px solid #5c4033;
+            background: rgba(0,0,0,0.5);
+        }
+        #lobby-controls { padding: 15px; border-bottom: 1px solid #5c4033; }
+        #btn-start-game {
+            background: #d35400; color: #fff; border: 1px solid #e67e22;
+        }
+        #btn-start-game:hover { background: #e67e22; color: #000; }
+        
+        .list-container {
+            flex: 1; overflow-y: auto;
+            padding: 10px; margin: 0; list-style: none;
+        }
+        #leaderboard li { margin-bottom: 8px; font-size: 16px; color: #ddd; }
+        #leaderboard .my-score { color: #f1c40f; font-weight: bold; text-shadow: 0 0 5px #f1c40f; }
+        #action-log { border-top: 2px solid #5c4033; flex: 1.5; }
+        #action-log li { margin-bottom: 6px; font-size: 13px; color: #aaa; line-height: 1.4; }
+        #action-log li .turn-header { color: #2ecc71; font-weight: bold; }
+        
+        /* スクロールバー装飾 */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.5); }
+        ::-webkit-scrollbar-thumb { background: #5c4033; }
+    </style>
+</head>
+<body>
+
+<!-- ログイン画面 -->
+<div id="login-screen">
+    <h1>マナ・サイクル・コロシアム</h1>
+    <div id="connection-log">
+        <div>> SYSTEM: BOOT SEQUENCE INITIATED...</div>
+        <div>> AWAITING USER INPUT.</div>
+    </div>
+    
+    <div class="input-group">
+        <div>> ENTER USERNAME:</div>
+        <input type="text" id="username" value="Player1">
+    </div>
+    
+    <button id="btn-host">部屋を作る (HOSTとして開始)</button>
+    
+    <div class="input-group" style="margin-top: 30px;">
+        <div>> OR ENTER ROOM ID TO JOIN:</div>
+        <input type="text" id="room-id" placeholder="Ex: A1B2C3">
+    </div>
+    <button id="btn-join">部屋に入る (CLIENTとして参加)</button>
+</div>
+
+<!-- ゲーム画面 -->
+<div id="game-screen">
+    <canvas id="game-canvas"></canvas>
+    
+    <div id="ui-panel">
+        <div id="lobby-controls" style="display: none;">
+            <div style="color: #2ecc71; font-weight: bold; margin-bottom: 10px;">> LOBBY STAGE</div>
+            <div style="margin-bottom: 10px;">ROOM ID: <span id="display-room-id" style="color:#f1c40f; font-size:18px;"></span></div>
+            <button id="btn-start-game">ゲーム開始</button>
+        </div>
+        
+        <h3>🏆 順位表</h3>
+        <ul id="leaderboard" class="list-container"></ul>
+        
+        <h3>📜 アクションログ</h3>
+        <ul id="action-log" class="list-container"></ul>
+    </div>
+</div>
+
+<script>
+/**
+ * P2P & Game Logic Implementation
+ */
+
+// --- 状態管理・グローバル変数 ---
+let peer = null;
+let myId = '';
+let isHost = false;
+let hostConn = null;       // Client用: Hostとの接続
+let connections = [];      // Host用: 全Clientとの接続
+
+let gamePhase = 'LOBBY';   // LOBBY, PLAYING, RESOLVING, RESULT
+let players = [];          // {id, name, score, status: 'lobby'|'thinking'|'ready', isDefending}
+let currentRound = 0;
+const MAX_ROUNDS = 10;
+
+// クライアント固有状態
+let myHand = [];
+let myState = 'WAITING';   // SELECTING, WAITING
+let selectedCardIndex = -1;
+
+// --- カードデータベース ---
+const CARDS = [
+    { id: 'c1', name: "Knight's Strike", type: "ATK", color: "#e74c3c", desc: "ランダムな相手から200pt奪う", 
+      effect: (user, ps, logs, parts) => {
+        let targets = ps.filter(p => p.id !== user.id);
+        if(targets.length > 0) {
+            let t = targets[Math.floor(Math.random() * targets.length)];
+            if(t.isDefending) {
+                logs.push(`${user.name}の攻撃! しかし${t.name}のシールドに防がれた!`);
+            } else {
+                t.score -= 200; user.score += 200;
+                logs.push(`${user.name}は${t.name}から200pt奪った!`);
+                parts.push({from: t.id, to: user.id, color: '#e74c3c'});
+            }
+        }
+    }},
+    { id: 'c2', name: "Holy Barrier", type: "DEF", color: "#3498db", desc: "このターンのポイント減少を完全に防ぐ", 
+      effect: () => {} // DEFは解決フェーズの最初に処理されるためここは空
+    },
+    { id: 'c3', name: "Mage's Transfer", type: "MAG", color: "#9b59b6", desc: "ランダムな相手とスコアを平均化する", 
+      effect: (user, ps, logs, parts) => {
+        let targets = ps.filter(p => p.id !== user.id);
+        if(targets.length > 0) {
+            let t = targets[Math.floor(Math.random() * targets.length)];
+            if(t.isDefending) {
+                logs.push(`${user.name}の魔術! しかし${t.name}は防御した!`);
+            } else {
+                let avg = Math.floor((user.score + t.score) / 2);
+                user.score = avg; t.score = avg;
+                logs.push(`${user.name}は${t.name}とスコアを同調させた。`);
+                parts.push({from: user.id, to: t.id, color: '#9b59b6'});
+                parts.push({from: t.id, to: user.id, color: '#9b59b6'});
+            }
+        }
+    }},
+    { id: 'c4', name: "Mana Drain", type: "MAG", color: "#8e44ad", desc: "全員から50ptずつ吸収する", 
+      effect: (user, ps, logs, parts) => {
+        let total = 0;
+        ps.forEach(p => {
+            if(p.id !== user.id) {
+                if(!p.isDefending) {
+                    p.score -= 50; total += 50;
+                    parts.push({from: p.id, to: user.id, color: '#8e44ad'});
+                }
+            }
+        });
+        user.score += total;
+        logs.push(`${user.name}は全体から計${total}ptを吸収した!`);
+    }},
+    { id: 'c5', name: "Quick Slash", type: "ATK", color: "#c0392b", desc: "右隣のプレイヤーから300pt奪う", 
+      effect: (user, ps, logs, parts) => {
+        let idx = ps.findIndex(p => p.id === user.id);
+        let tIdx = (idx + 1) % ps.length;
+        let t = ps[tIdx];
+        if(t && t.id !== user.id) {
+            if(t.isDefending) {
+                logs.push(`${user.name}の斬撃! しかし${t.name}は防御した。`);
+            } else {
+                t.score -= 300; user.score += 300;
+                logs.push(`${user.name}は右隣の${t.name}から300pt奪った!`);
+                parts.push({from: t.id, to: user.id, color: '#c0392b'});
+            }
+        }
+    }}
+];
+
+// --- 初期化 & PeerJS通信 ---
+function logCLI(msg) {
+    const el = document.getElementById('connection-log');
+    const div = document.createElement('div');
+    div.innerText = '> ' + msg;
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+}
+
+function generateId() {
+    return Math.random().toString(36).substr(2, 6).toUpperCase();
+}
+
+document.getElementById('btn-host').addEventListener('click', () => {
+    const name = document.getElementById('username').value || 'Host';
+    isHost = true;
+    initPeer(name);
+});
+
+document.getElementById('btn-join').addEventListener('click', () => {
+    const name = document.getElementById('username').value || 'Player';
+    const roomId = document.getElementById('room-id').value.toUpperCase();
+    if(!roomId) {
+        logCLI('ERROR: ROOM ID IS REQUIRED TO JOIN.');
+        return;
+    }
+    isHost = false;
+    initPeer(name, roomId);
+});
+
+function initPeer(username, roomIdToJoin = null) {
+    logCLI("INITIALIZING WEBRTC CONNECTION...");
+    // 任意のIDでPeerサーバーに接続
+    peer = new Peer(generateId());
+    
+    peer.on('open', id => {
+        myId = id;
+        logCLI(`CONNECTED. YOUR ID: [${id}]`);
+        
+        if(isHost) {
+            logCLI(`AWAITING PLAYERS... ROOM ID IS [${id}]`);
+            document.getElementById('display-room-id').innerText = id;
+            players.push({id: myId, name: username, score: 1000, status: 'lobby'});
+            
+            switchToGameScreen();
+            document.getElementById('lobby-controls').style.display = 'block';
+            updateLeaderboard();
+        } else {
+            joinRoom(username, roomIdToJoin);
+        }
+    });
+
+    peer.on('connection', conn => {
+        if(isHost) {
+            conn.on('open', () => {
+                connections.push(conn);
+                conn.on('data', data => handleClientData(conn, data));
+            });
+            conn.on('close', () => {
+                players = players.filter(p => p.id !== conn.peer);
+                connections = connections.filter(c => c !== conn);
+                broadcastState();
+                addActionLog(`SYSTEM: ${conn.peer} が切断しました。`);
+            });
+        }
+    });
+}
+
+function joinRoom(username, roomId) {
+    logCLI(`CONNECTING TO HOST: [${roomId}]...`);
+    hostConn = peer.connect(roomId);
+    
+    hostConn.on('open', () => {
+        logCLI("CONNECTED TO HOST SUCCESSFULLY.");
+        hostConn.send({type: 'JOIN', name: username, id: myId});
+    });
+    
+    hostConn.on('data', data => {
+        if(data.type === 'STATE_UPDATE') {
+            updateLocalState(data);
+            if(document.getElementById('login-screen').style.display !== 'none') {
+                switchToGameScreen();
+            }
+        } else if (data.type === 'ROUND_START') {
+            handleRoundStart(data);
+        } else if (data.type === 'ROUND_RESULT') {
+            updateLocalResult(data);
+        } else if (data.type === 'ERROR') {
+            logCLI(`ERROR FROM HOST: ${data.msg}`);
+        }
+    });
+}
+
+function switchToGameScreen() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('game-screen').style.display = 'block';
+    resizeCanvas();
+    requestAnimationFrame(gameLoop);
+}
+
+// --- ホスト用ロジック ---
+let readyCount = 0;
+
+function handleClientData(conn, data) {
+    if(data.type === 'JOIN') {
+        if(players.length >= 10 || gamePhase !== 'LOBBY') {
+            conn.send({type: 'ERROR', msg: 'Room is full or game has started.'});
+            return;
+        }
+        players.push({id: data.id, name: data.name, score: 1000, status: 'lobby'});
+        addActionLog(`SYSTEM: ${data.name} が参加しました。`);
+        broadcastState();
+    } else if (data.type === 'PLAY_CARD') {
+        handlePlayCard(data.id, data.card);
+    }
+}
+
+function broadcastState() {
+    const state = {
+        type: 'STATE_UPDATE',
+        players: players.map(p => ({id: p.id, name: p.name, score: p.score, status: p.status})),
+        currentRound: currentRound,
+        phase: gamePhase
+    };
+    connections.forEach(c => c.send(state));
+    updateLocalState(state); // 自身にも適用
+}
+
+document.getElementById('btn-start-game').addEventListener('click', () => {
+    if(!isHost) return;
+    if(players.length < 1) {
+        alert("プレイヤーが必要です。"); return;
+    }
+    document.getElementById('lobby-controls').style.display = 'none';
+    startRound();
+});
+
+function drawCards(num) {
+    let h = [];
+    for(let i=0; i<num; i++) h.push(CARDS[Math.floor(Math.random() * CARDS.length)]);
+    return h;
+}
+
+function startRound() {
+    currentRound++;
+    players.forEach(p => {
+        p.status = 'thinking';
+        p.playedCard = null;
+        p.isDefending = false;
+        
+        let hand = drawCards(5);
+        if(p.id === myId) {
+            handleRoundStart({round: currentRound, hand: hand});
+        } else {
+            const conn = connections.find(c => c.peer === p.id);
+            if(conn) conn.send({type: 'ROUND_START', round: currentRound, hand: hand});
+        }
+    });
+    gamePhase = 'PLAYING';
+    readyCount = 0;
+    broadcastState();
+}
+
+function handlePlayCard(playerId, card) {
+    let p = players.find(p => p.id === playerId);
+    if(p && p.status === 'thinking') {
+        p.status = 'ready';
+        p.playedCard = card;
+        readyCount++;
+        broadcastState(); // 誰がreadyになったか更新
+        
+        if(readyCount >= players.length) {
+            resolveRound();
+        }
+    }
+}
+
+function resolveRound() {
+    gamePhase = 'RESOLVING';
+    let logs = [];
+    let parts = [];
+    
+    // 1. DEFカードの事前処理
+    players.forEach(p => {
+        p.isDefending = false;
+        if(p.playedCard && p.playedCard.type === 'DEF') {
+            p.isDefending = true;
+            logs.push(`🛡️ ${p.name}は防御態勢に入った。`);
+            parts.push({from: p.id, to: p.id, color: '#00ffff', type: 'shield'});
+        }
+    });
+
+    // 2. ATK/MAGカードの処理
+    players.forEach(p => {
+        if(p.playedCard && p.playedCard.type !== 'DEF') {
+            let cardObj = CARDS.find(c => c.id === p.playedCard.id);
+            if(cardObj && cardObj.effect) {
+                cardObj.effect(p, players, logs, parts);
+            }
+        }
+    });
+
+    // 3. 結果の送信
+    const resultMsg = {
+        type: 'ROUND_RESULT',
+        logs: logs,
+        particles: parts,
+        players: players.map(p => ({id: p.id, name: p.name, score: p.score}))
+    };
+    
+    connections.forEach(c => c.send(resultMsg));
+    updateLocalResult(resultMsg);
+
+    // 4. アニメーション待機後、次へ
+    setTimeout(() => {
+        if(currentRound >= MAX_ROUNDS) {
+            gamePhase = 'RESULT';
+            broadcastState();
+        } else {
+            startRound();
+        }
+    }, 4500); // 4.5秒待機
+}
+
+// --- クライアント/UI 更新ロジック ---
+function updateLocalState(data) {
+    players = data.players;
+    currentRound = data.currentRound;
+    gamePhase = data.phase;
+    updateLeaderboard();
+    calculatePositions();
+}
+
+function handleRoundStart(data) {
+    currentRound = data.round;
+    myHand = data.hand;
+    myState = 'SELECTING';
+    selectedCardIndex = -1;
+    addActionLog(`<span class="turn-header">--- ROUND ${currentRound} START ---</span>`);
+}
+
+function updateLocalResult(data) {
+    // スコア同期
+    players = data.players;
+    updateLeaderboard();
+    
+    // ログ追加
+    data.logs.forEach(l => addActionLog(l));
+    
+    // エフェクト生成
+    data.particles.forEach(p => {
+        let fromPos = playerPositions[p.from];
+        let toPos = playerPositions[p.to];
+        if(fromPos && toPos) {
+            activeParticles.push({
+                type: p.type || 'projectile',
+                startX: fromPos.x, startY: fromPos.y,
+                targetX: toPos.x, targetY: toPos.y,
+                color: p.color,
+                progress: 0,
+                speed: 0.015 + Math.random() * 0.01
+            });
+        }
+    });
+}
+
+function updateLeaderboard() {
+    const list = document.getElementById('leaderboard');
+    list.innerHTML = '';
+    let sorted = [...players].sort((a,b) => b.score - a.score);
+    sorted.forEach((p, i) => {
+        let li = document.createElement('li');
+        li.innerText = `${i+1}. ${p.name} : ${p.score}pt`;
+        if(p.id === myId) li.className = 'my-score';
+        if(p.status === 'ready' && gamePhase === 'PLAYING') li.innerText += ' ✅';
+        list.appendChild(li);
+    });
+}
+
+function addActionLog(msg) {
+    const list = document.getElementById('action-log');
+    let li = document.createElement('li');
+    li.innerHTML = msg;
+    list.appendChild(li);
+    list.scrollTop = list.scrollHeight;
+}
+
+// --- Canvas 描画ロジック ---
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d');
+
+let playerPositions = {};
+let handRects = [];
+let hoveredCardIndex = -1;
+let btnRect = null;
+let activeParticles = [];
+let magicRotation = 0;
+
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    calculatePositions();
+}
+window.addEventListener('resize', resizeCanvas);
+
+function calculatePositions() {
+    const uiWidth = 300;
+    const gameCx = (canvas.width - uiWidth) / 2;
+    const cy = canvas.height / 2;
+    const radius = Math.min(gameCx, cy) * 0.65;
+
+    playerPositions = {};
+    players.forEach((p, i) => {
+        const theta = -Math.PI / 2 + (Math.PI * 2 / players.length) * i;
+        playerPositions[p.id] = {
+            x: gameCx + radius * Math.cos(theta),
+            y: cy + radius * Math.sin(theta) - 50 // 手札スペースを避けるため少し上へ
+        };
+    });
+}
+
+function drawBackground() {
+    // セピア/ダークファンタジー風グラデーション
+    let grad = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 0, canvas.width/2, canvas.height/2, canvas.width);
+    grad.addColorStop(0, '#2a1e12');
+    grad.addColorStop(1, '#0a0500');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function drawMagicCircle(cx, cy, radius) {
+    magicRotation += 0.002;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(magicRotation);
+    
+    ctx.strokeStyle = 'rgba(230, 194, 0, 0.15)';
+    ctx.lineWidth = 2;
+    
+    ctx.beginPath(); ctx.arc(0, 0, radius * 0.3, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, radius * 0.28, 0, Math.PI * 2); ctx.stroke();
+    
+    // 八芒星
+    for(let i=0; i<8; i++) {
+        ctx.beginPath();
+        ctx.moveTo(radius * 0.3 * Math.cos(i * Math.PI / 4), radius * 0.3 * Math.sin(i * Math.PI / 4));
+        ctx.lineTo(radius * 0.3 * Math.cos((i+3) * Math.PI / 4), radius * 0.3 * Math.sin((i+3) * Math.PI / 4));
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
+function drawPlayers() {
+    players.forEach(p => {
+        const pos = playerPositions[p.id];
+        if(!pos) return;
+        
+        ctx.save();
+        ctx.translate(pos.x, pos.y);
+        
+        // 拠点クリスタル（ひし形）
+        if(p.status === 'ready' && gamePhase === 'PLAYING') {
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#2ecc71';
+            ctx.fillStyle = '#2ecc71';
+        } else {
+            ctx.fillStyle = p.id === myId ? '#3498db' : '#7f8c8d';
+        }
+        
+        ctx.beginPath();
+        ctx.moveTo(0, -20); ctx.lineTo(15, 0); ctx.lineTo(0, 20); ctx.lineTo(-15, 0);
+        ctx.closePath();
+        ctx.fill();
+        
+        // テキスト
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#ecf0f1';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(p.name, 0, -30);
+        
+        ctx.fillStyle = '#f1c40f';
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText(p.score + ' pt', 0, 40);
+        
+        ctx.restore();
+    });
+}
+
+function wrapText(context, text, x, y, maxWidth, lineHeight) {
+    let chars = text.split('');
+    let line = '';
+    for(let n = 0; n < chars.length; n++) {
+        let testLine = line + chars[n];
+        let metrics = context.measureText(testLine);
+        if (metrics.width > maxWidth && n > 0) {
+            context.fillText(line, x, y);
+            line = chars[n];
+            y += lineHeight;
+        } else {
+            line = testLine;
+        }
+    }
+    context.fillText(line, x, y);
+}
+
+function drawHand() {
+    if(gamePhase !== 'PLAYING') return;
+    
+    const cw = 110; const ch = 150; const margin = 15;
+    const gameW = canvas.width - 300;
+    const startX = gameW / 2 - ((cw * 5 + margin * 4) / 2);
+    const y = canvas.height - ch - 20;
+
+    handRects = [];
+    btnRect = null;
+
+    myHand.forEach((card, i) => {
+        const x = startX + i * (cw + margin);
+        handRects.push({x, y, w: cw, h: ch, card});
+        
+        const isSelected = (i === selectedCardIndex);
+        const isHovered = (i === hoveredCardIndex);
+        const drawY = isSelected ? y - 25 : (isHovered ? y - 10 : y);
+        
+        // カード背景
+        ctx.fillStyle = isSelected ? '#3e2723' : '#2c1e16';
+        ctx.fillRect(x, drawY, cw, ch);
+        
+        // 枠
+        ctx.strokeStyle = card.color;
+        ctx.lineWidth = isSelected ? 4 : 2;
+        ctx.strokeRect(x, drawY, cw, ch);
+        
+        // テキスト
+        ctx.fillStyle = card.color;
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`[ ${card.type} ]`, x + cw/2, drawY + 20);
+        
+        ctx.fillStyle = '#fff';
+        ctx.font = '13px Arial';
+        wrapText(ctx, card.name, x + cw/2, drawY + 50, cw - 10, 16);
+        
+        ctx.fillStyle = '#aaa';
+        ctx.font = '11px Arial';
+        wrapText(ctx, card.desc, x + cw/2, drawY + 90, cw - 10, 14);
+    });
+
+    // 決定ボタン・ステータス表示
+    const btnX = gameW / 2 - 80;
+    const btnY = y - 60;
+    
+    if(selectedCardIndex !== -1 && myState === 'SELECTING') {
+        btnRect = {x: btnX, y: btnY, w: 160, h: 40};
+        ctx.fillStyle = '#d35400';
+        ctx.fillRect(btnX, btnY, 160, 40);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText("カードを伏せる", btnX + 80, btnY + 26);
+    } else if (myState === 'WAITING') {
+        ctx.fillStyle = '#2ecc71';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText("他のプレイヤーを待機中...", gameW / 2, btnY + 26);
+    }
+}
+
+function updateAndDrawParticles() {
+    for(let i = activeParticles.length - 1; i >= 0; i--) {
+        let p = activeParticles[i];
+        
+        if(p.type === 'shield') {
+            p.progress += 0.01;
+            if(p.progress >= 1) { activeParticles.splice(i, 1); continue; }
+            
+            ctx.beginPath();
+            ctx.arc(p.startX, p.startY, 35 + Math.sin(p.progress * Math.PI) * 10, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(0, 255, 255, ${1 - p.progress})`;
+            ctx.lineWidth = 4;
+            ctx.stroke();
+        } else {
+            p.progress += p.speed;
+            if(p.progress >= 1) { activeParticles.splice(i, 1); continue; }
+            
+            // Ease in-out
+            let ease = p.progress < .5 ? 2 * p.progress * p.progress : -1 + (4 - 2 * p.progress) * p.progress;
+            let cx = p.startX + (p.targetX - p.startX) * ease;
+            let cy = p.startY + (p.targetY - p.startY) * ease;
+            
+            ctx.beginPath();
+            ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+            ctx.fillStyle = p.color;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = p.color;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            
+            // 軌跡
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx - (p.targetX - p.startX)*0.05, cy - (p.targetY - p.startY)*0.05);
+            ctx.strokeStyle = p.color;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+        }
+    }
+}
+
+function drawResult() {
+    const gameW = canvas.width - 300;
+    ctx.fillStyle = 'rgba(0,0,0,0.85)';
+    ctx.fillRect(0, 0, gameW, canvas.height);
+    
+    ctx.fillStyle = '#f1c40f';
+    ctx.font = 'bold 48px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText("GAME FINISHED", gameW / 2, canvas.height / 2 - 50);
+    
+    let sorted = [...players].sort((a,b) => b.score - a.score);
+    ctx.fillStyle = '#fff';
+    ctx.font = '32px Arial';
+    ctx.fillText(`WINNER: ${sorted[0].name} (${sorted[0].score}pt)`, gameW / 2, canvas.height / 2 + 30);
+}
+
+function gameLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const gameW = canvas.width - 300;
+    
+    drawBackground();
+    
+    if(gamePhase === 'LOBBY') {
+        drawMagicCircle(gameW / 2, canvas.height / 2, Math.min(gameW, canvas.height)*0.6);
+        drawPlayers();
+        ctx.fillStyle = '#fff';
+        ctx.font = '24px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText("プレイヤーの参加を待機中...", gameW / 2, canvas.height / 2);
+    } else if (gamePhase === 'PLAYING' || gamePhase === 'RESOLVING') {
+        drawMagicCircle(gameW / 2, canvas.height / 2 - 50, Math.min(gameW, canvas.height)*0.65);
+        updateAndDrawParticles();
+        drawPlayers();
+        drawHand();
+        
+        // ラウンド数表示
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.font = 'bold 120px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`R${currentRound}`, gameW / 2, canvas.height / 2 + 30);
+    } else if (gamePhase === 'RESULT') {
+        drawMagicCircle(gameW / 2, canvas.height / 2, Math.min(gameW, canvas.height)*0.6);
+        drawPlayers();
+        drawResult();
+    }
+    
+    requestAnimationFrame(gameLoop);
+}
+
+// --- 入力イベント (Canvas) ---
+canvas.addEventListener('mousemove', e => {
+    if(gamePhase !== 'PLAYING') return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    
+    hoveredCardIndex = -1;
+    handRects.forEach((pos, i) => {
+        if(mx >= pos.x && mx <= pos.x + pos.w && my >= pos.y && my <= pos.y + pos.h) {
+            hoveredCardIndex = i;
+        }
+    });
+});
+
+canvas.addEventListener('click', e => {
+    if(gamePhase !== 'PLAYING') return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    
+    // カード選択
+    if(hoveredCardIndex !== -1 && myState === 'SELECTING') {
+        selectedCardIndex = hoveredCardIndex;
+    }
+    
+    // 決定ボタン押下
+    if(btnRect && selectedCardIndex !== -1 && myState === 'SELECTING') {
+        if(mx >= btnRect.x && mx <= btnRect.x + btnRect.w && my >= btnRect.y && my <= btnRect.y + btnRect.h) {
+            submitCard();
+        }
+    }
+});
+
+function submitCard() {
+    const card = myHand[selectedCardIndex];
+    myState = 'WAITING';
+    
+    if(isHost) {
+        handlePlayCard(myId, card);
+    } else {
+        hostConn.send({type: 'PLAY_CARD', id: myId, card: card});
+    }
+}
+
+</script>
+</body>
+</html>
