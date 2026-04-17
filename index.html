@@ -229,7 +229,7 @@
     </div>
 
     <div id="ui-panel">
-        <div id="lobby-header" class="panel-section" style="display: none;">
+        <div id="lobby-header" class="panel-section">
             <h3>Arena Standby</h3>
             <div class="room-id-display" id="display-room-id">---</div>
             <button id="btn-start-game" style="display: none; border-color: var(--accent-gold); color: var(--accent-gold);">START BATTLE</button>
@@ -259,7 +259,7 @@ const CARDS = [
         if(targets.length > 0) {
             let t = targets[Math.floor(Math.random() * targets.length)];
             if(t.isDefending) {
-                logs.push(`${user.name}の攻撃! しかし${t.name}のシールドが火花を散らして防いだ!`);
+                logs.push(`${user.name}の攻撃! しかし${t.name}のシールドが防いだ!`);
             } else {
                 const amt = Math.min(t.score, 250);
                 t.score -= amt; user.score += amt;
@@ -268,10 +268,10 @@ const CARDS = [
             }
         }
     }},
-    { id: 'c2', name: "Holy Barrier", type: "DEF", color: "#3498db", desc: "このターンのあらゆる干渉を遮断する", 
+    { id: 'c2', name: "Holy Barrier", type: "DEF", color: "#3498db", desc: "このターンの攻撃を遮断する", 
       effect: () => {} 
     },
-    { id: 'c3', name: "Mana Siphon", type: "MAG", color: "#9b59b6", desc: "全生存者から100ptずつ吸収する", 
+    { id: 'c3', name: "Mana Siphon", type: "MAG", color: "#9b59b6", desc: "全員から100ptずつ吸収する", 
       effect: (user, ps, logs, parts) => {
         let total = 0;
         ps.forEach(p => {
@@ -284,20 +284,20 @@ const CARDS = [
             }
         });
         user.score += total;
-        logs.push(`${user.name}の魔力吸引! 計${total}ptを自身の糧とした。`);
+        logs.push(`${user.name}の吸引! 計${total}ptを吸収した。`);
     }},
-    { id: 'c4', name: "Cycle Burst", type: "ATK", color: "#f39c12", desc: "両隣のプレイヤーから150ptずつ奪う", 
+    { id: 'c4', name: "Cycle Burst", type: "ATK", color: "#f39c12", desc: "両隣から150ptずつ奪う", 
       effect: (user, ps, logs, parts) => {
         let idx = ps.findIndex(p => p.id === user.id);
         [ (idx - 1 + ps.length) % ps.length, (idx + 1) % ps.length ].forEach(tIdx => {
             let t = ps[tIdx];
             if(t && t.id !== user.id) {
                 if(t.isDefending) {
-                    logs.push(`${t.name}は衝撃波を防御した。`);
+                    logs.push(`${t.name}は防御した。`);
                 } else {
                     const amt = Math.min(t.score, 150);
                     t.score -= amt; user.score += amt;
-                    logs.push(`${user.name}のバースト! ${t.name}から${amt}ptを奪取。`);
+                    logs.push(`${user.name}のバースト! ${t.name}から${amt}pt。`);
                     parts.push({from: t.id, to: user.id, color: '#f39c12'});
                 }
             }
@@ -318,7 +318,6 @@ let gamePhase = 'LOBBY';
 let currentRound = 0;
 const MAX_ROUNDS = 8;
 
-// Client Local State
 let myHand = [];
 let myState = 'IDLE'; 
 let selectedCardIndex = -1;
@@ -335,7 +334,6 @@ function generateId() {
     return Math.random().toString(36).substr(2, 5).toUpperCase();
 }
 
-// Event Listeners for UI
 document.getElementById('btn-host').addEventListener('click', () => {
     const name = document.getElementById('username').value || 'Unknown';
     isHost = true;
@@ -344,10 +342,10 @@ document.getElementById('btn-host').addEventListener('click', () => {
 
 document.getElementById('btn-join').addEventListener('click', () => {
     const name = document.getElementById('username').value || 'Unknown';
-    const roomId = document.getElementById('room-id').value.toUpperCase();
-    if(!roomId) return logCLI("ERROR: ROOM ID REQUIRED.");
+    const roomIdInput = document.getElementById('room-id').value.toUpperCase();
+    if(!roomIdInput) return logCLI("ERROR: ROOM ID REQUIRED.");
     isHost = false;
-    initPeer(name, roomId);
+    initPeer(name, roomIdInput);
 });
 
 function initPeer(username, targetRoomId = null) {
@@ -359,9 +357,9 @@ function initPeer(username, targetRoomId = null) {
         logCLI(`NODE ONLINE. ID: [${id}]`);
         
         if(isHost) {
-            document.getElementById('lobby-header').style.display = 'block';
             document.getElementById('display-room-id').innerText = id;
             document.getElementById('btn-start-game').style.display = 'block';
+            document.getElementById('waiting-msg').style.display = 'none';
             players.push({id: myId, name: username, score: 1200, status: 'lobby'});
             transitionToGame();
             updateLeaderboard();
@@ -374,6 +372,7 @@ function initPeer(username, targetRoomId = null) {
         if(isHost) {
             conn.on('open', () => {
                 connections.push(conn);
+                logCLI(`LINK ESTABLISHED: ${conn.peer}`);
                 conn.on('data', data => handleIncomingData(conn, data));
             });
             conn.on('close', () => {
@@ -387,7 +386,6 @@ function initPeer(username, targetRoomId = null) {
 
     peer.on('error', err => {
         logCLI(`FATAL ERROR: ${err.type}`);
-        console.error(err);
     });
 }
 
@@ -398,8 +396,9 @@ function connectToHost(username, roomId) {
     hostConn.on('open', () => {
         logCLI("CONNECTION ESTABLISHED.");
         hostConn.send({type: 'JOIN', name: username, id: myId});
-        document.getElementById('lobby-header').style.display = 'block';
         document.getElementById('display-room-id').innerText = roomId;
+        document.getElementById('btn-start-game').style.display = 'none';
+        document.getElementById('waiting-msg').style.display = 'block';
         transitionToGame();
     });
     
@@ -409,10 +408,7 @@ function connectToHost(username, roomId) {
 function handleIncomingData(conn, data) {
     if(isHost) {
         if(data.type === 'JOIN') {
-            if(players.length >= 8 || gamePhase !== 'LOBBY') {
-                conn.send({type: 'ERROR', msg: 'Arena Full/Started'});
-                return;
-            }
+            if(players.length >= 8 || gamePhase !== 'LOBBY') return;
             players.push({id: data.id, name: data.name, score: 1200, status: 'lobby'});
             addLog(`SYSTEM: ${data.name} entered the arena.`);
             broadcastState();
@@ -424,11 +420,15 @@ function handleIncomingData(conn, data) {
             players = data.players;
             gamePhase = data.phase;
             currentRound = data.round;
+            if(gamePhase === 'PLAYING') {
+                document.getElementById('lobby-header').style.display = 'none';
+            }
             updateLeaderboard();
         } else if (data.type === 'ROUND_START') {
             myHand = data.hand;
             myState = 'SELECTING';
             selectedCardIndex = -1;
+            document.getElementById('lobby-header').style.display = 'none';
             addLog(`<div class="log-turn">--- ROUND ${data.round} START ---</div>`);
         } else if (data.type === 'ROUND_RESOLVE') {
             players = data.players;
@@ -447,7 +447,9 @@ function broadcastState() {
         round: currentRound
     };
     connections.forEach(c => c.send(msg));
-    handleIncomingData(null, msg);
+    // Host自身にも反映
+    players = msg.players;
+    updateLeaderboard();
 }
 
 /**
@@ -455,13 +457,14 @@ function broadcastState() {
  */
 document.getElementById('btn-start-game').addEventListener('click', () => {
     if(!isHost || players.length < 1) return;
-    document.getElementById('btn-start-game').style.display = 'none';
+    addLog("SYSTEM: BATTLE INITIATED.");
     startNewRound();
 });
 
 function startNewRound() {
     currentRound++;
     gamePhase = 'PLAYING';
+    document.getElementById('lobby-header').style.display = 'none';
     
     players.forEach(p => {
         p.status = 'thinking';
@@ -496,16 +499,14 @@ function resolveBattle() {
     let logs = [];
     let effects = [];
 
-    // 1. Initial Defense Check
     players.forEach(p => {
         p.isDefending = (p.chosenCard && p.chosenCard.type === 'DEF');
         if(p.isDefending) {
-            logs.push(`🛡️ ${p.name} activated Holy Barrier.`);
+            logs.push(`🛡️ ${p.name} がシールドを展開。`);
             effects.push({from: p.id, to: p.id, type: 'shield', color: '#00ffff'});
         }
     });
 
-    // 2. Execute Effects
     players.forEach(p => {
         if(p.chosenCard && p.chosenCard.type !== 'DEF') {
             const cardRef = CARDS.find(c => c.id === p.chosenCard.id);
@@ -513,7 +514,6 @@ function resolveBattle() {
         }
     });
 
-    // 3. Sync Results
     const resolveMsg = {
         type: 'ROUND_RESOLVE',
         players: players.map(p => ({id: p.id, name: p.name, score: p.score})),
@@ -552,12 +552,14 @@ function transitionToGame() {
 
 function resizeCanvas() {
     const container = document.getElementById('canvas-container');
+    if(!container) return;
     canvas.width = container.clientWidth;
     canvas.height = container.clientHeight;
 }
 
 function updateLeaderboard() {
     const list = document.getElementById('leaderboard');
+    if(!list) return;
     list.innerHTML = '';
     [...players].sort((a,b) => b.score - a.score).forEach((p, i) => {
         const li = document.createElement('li');
@@ -570,6 +572,7 @@ function updateLeaderboard() {
 
 function addLog(msg) {
     const list = document.getElementById('action-log');
+    if(!list) return;
     const li = document.createElement('div');
     li.className = 'log-entry';
     li.innerHTML = msg;
@@ -593,7 +596,6 @@ function triggerEffects(effs) {
 function renderLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Background Magic Circle
     const cx = canvas.width / 2;
     const cy = canvas.height / 2 - 40;
     const radius = Math.min(cx, cy) * 0.7;
@@ -601,9 +603,7 @@ function renderLoop() {
     ctx.strokeStyle = 'rgba(92, 64, 51, 0.3)';
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI*2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(cx, cy, radius * 0.95, 0, Math.PI*2); ctx.stroke();
 
-    // Draw Players in Circle
     playerNodes = {};
     players.forEach((p, i) => {
         const angle = (i / players.length) * Math.PI * 2 - Math.PI / 2;
@@ -611,7 +611,6 @@ function renderLoop() {
         const py = cy + Math.sin(angle) * radius;
         playerNodes[p.id] = {x: px, y: py};
 
-        // Node Visual
         ctx.fillStyle = p.id === myId ? '#3498db' : (p.status === 'ready' ? '#2ecc71' : '#5c4033');
         ctx.shadowBlur = p.status === 'ready' ? 15 : 0;
         ctx.shadowColor = ctx.fillStyle;
@@ -622,7 +621,6 @@ function renderLoop() {
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        // Name & Score
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 12px Arial';
         ctx.textAlign = 'center';
@@ -631,7 +629,6 @@ function renderLoop() {
         ctx.fillText(`${p.score}pt`, px, py + 30);
     });
 
-    // Particles
     activeParticles = activeParticles.filter(p => {
         const start = playerNodes[p.fromId];
         const end = playerNodes[p.toId];
@@ -659,7 +656,6 @@ function renderLoop() {
         return true;
     });
 
-    // Draw Hand
     if(gamePhase === 'PLAYING' && myState === 'SELECTING') {
         renderHand();
     } else if (myState === 'WAITING') {
@@ -764,11 +760,9 @@ canvas.addEventListener('mousedown', e => {
 
     myHand.forEach((_, i) => {
         const x = startX + i * (cardW + 15);
-        // Check Selection
         if(mouseX >= x && mouseX <= x+cardW && mouseY >= y && mouseY <= y+cardH) {
             selectedCardIndex = i;
         }
-        // Check "Cast" button click
         if(selectedCardIndex === i && mouseX >= x && mouseX <= x+cardW && mouseY >= y+cardH+5 && mouseY <= y+cardH+30) {
             confirmAction();
         }
