@@ -172,11 +172,6 @@
         }
         .badge-ready { background: #27ae60; }
 
-        #lobby-controls {
-            padding: 20px;
-            background: rgba(230, 194, 0, 0.1);
-        }
-
         .room-id-display {
             font-size: 24px;
             color: var(--accent-gold);
@@ -314,7 +309,7 @@ let isHost = false;
 let hostConn = null;
 let connections = [];
 let players = [];
-let battleRecords = []; // 共有用ログ配列
+let battleRecords = []; 
 let gamePhase = 'LOBBY'; 
 let currentRound = 0;
 const MAX_ROUNDS = 8;
@@ -325,6 +320,7 @@ let selectedCardIndex = -1;
 
 function logCLI(msg) {
     const el = document.getElementById('connection-log');
+    if(!el) return;
     const div = document.createElement('div');
     div.innerText = `> ${msg}`;
     el.appendChild(div);
@@ -375,7 +371,6 @@ function initPeer(username, targetRoomId = null) {
                 connections.push(conn);
                 logCLI(`LINK ESTABLISHED: ${conn.peer}`);
                 conn.on('data', data => handleIncomingData(conn, data));
-                // 新規参加者に現在の状態と過去のログを同期
                 broadcastState();
             });
             conn.on('close', () => {
@@ -424,7 +419,6 @@ function handleIncomingData(conn, data) {
             gamePhase = data.phase;
             currentRound = data.round;
             
-            // ログの完全同期
             if(data.records) {
                 syncActionLogs(data.records);
             }
@@ -434,14 +428,13 @@ function handleIncomingData(conn, data) {
             }
             updateLeaderboard();
         } else if (data.type === 'ROUND_START') {
+            console.log("ROUND START RECEIVED", data.hand);
             myHand = data.hand;
-            myState = 'SELECTING';
+            myState = 'SELECTING'; // 確実に手札選択状態にする
             selectedCardIndex = -1;
             document.getElementById('lobby-header').style.display = 'none';
-            // ラウンド開始はSTATE_SYNCのログに含まれるためここでは個別追加不要
         } else if (data.type === 'ROUND_RESOLVE') {
             players = data.players;
-            // 解決ログもSTATE_SYNCで送られてくるが、エフェクトだけ実行
             triggerEffects(data.effects);
             updateLeaderboard();
         }
@@ -454,9 +447,11 @@ function broadcastState() {
         players: players.map(p => ({id: p.id, name: p.name, score: p.score, status: p.status})),
         phase: gamePhase,
         round: currentRound,
-        records: battleRecords // ログ履歴を同封
+        records: battleRecords
     };
-    connections.forEach(c => c.send(msg));
+    connections.forEach(c => {
+        if(c.open) c.send(msg);
+    });
     updateLeaderboard();
 }
 
@@ -479,21 +474,27 @@ function startNewRound() {
     players.forEach(p => {
         p.status = 'thinking';
         p.chosenCard = null;
+        // 毎回新しい手札を生成
         const hand = Array.from({length: 4}, () => CARDS[Math.floor(Math.random() * CARDS.length)]);
         
         if(p.id === myId) {
-            // ホスト自身の処理
             myHand = hand;
             myState = 'SELECTING';
             selectedCardIndex = -1;
         } else {
-            // クライアントへ配布
-            const c = connections.find(conn => conn.peer === p.id);
-            if(c) c.send({type: 'ROUND_START', hand, round: currentRound});
+            // クライアントへ送信
+            const targetConn = connections.find(conn => conn.peer === p.id);
+            if(targetConn && targetConn.open) {
+                console.log(`Sending hand to ${p.id}`);
+                targetConn.send({
+                    type: 'ROUND_START', 
+                    hand: hand, 
+                    round: currentRound
+                });
+            }
         }
     });
     
-    // 全員に現在のフェーズとログを同期
     broadcastState();
 }
 
@@ -504,18 +505,19 @@ function processPlayerAction(pid, card) {
         p.chosenCard = card;
         broadcastState();
         
+        // 全員が揃ったかチェック
         if(players.every(pl => pl.status === 'ready')) {
-            resolveBattle();
+            setTimeout(resolveBattle, 500);
         }
     }
 }
 
 function resolveBattle() {
     gamePhase = 'RESOLVING';
+    myState = 'IDLE';
     let logs = [];
     let effects = [];
 
-    // 防御判定
     players.forEach(p => {
         p.isDefending = (p.chosenCard && p.chosenCard.type === 'DEF');
         if(p.isDefending) {
@@ -524,7 +526,6 @@ function resolveBattle() {
         }
     });
 
-    // 攻撃・魔法実行
     players.forEach(p => {
         if(p.chosenCard && p.chosenCard.type !== 'DEF') {
             const cardRef = CARDS.find(c => c.id === p.chosenCard.id);
@@ -532,7 +533,6 @@ function resolveBattle() {
         }
     });
 
-    // 結果ログの保存
     logs.forEach(l => addLog(l, true));
 
     const resolveMsg = {
@@ -541,9 +541,8 @@ function resolveBattle() {
         effects
     };
     
-    connections.forEach(c => c.send(resolveMsg));
+    connections.forEach(c => { if(c.open) c.send(resolveMsg); });
     
-    // ホスト自身のエフェクト実行
     triggerEffects(effects);
     broadcastState();
 
@@ -594,7 +593,6 @@ function updateLeaderboard() {
     });
 }
 
-// ログ追加（isBroadcastingがtrueなら履歴に追加）
 function addLog(msg, isBroadcasting = false) {
     if(isBroadcasting) {
         battleRecords.push(msg);
@@ -610,11 +608,10 @@ function addLog(msg, isBroadcasting = false) {
     list.scrollTop = list.scrollHeight;
 }
 
-// クライアント側でログを同期
 function syncActionLogs(records) {
     const list = document.getElementById('action-log');
     if(!list) return;
-    list.innerHTML = ''; // 一旦クリア
+    list.innerHTML = ''; 
     records.forEach(msg => {
         const li = document.createElement('div');
         li.className = 'log-entry';
@@ -814,12 +811,15 @@ canvas.addEventListener('mousedown', e => {
 });
 
 function confirmAction() {
+    if(selectedCardIndex === -1) return;
     const card = myHand[selectedCardIndex];
     myState = 'WAITING';
     if(isHost) {
         processPlayerAction(myId, card);
     } else {
-        hostConn.send({type: 'ACTION', id: myId, card: card});
+        if(hostConn && hostConn.open) {
+            hostConn.send({type: 'ACTION', id: myId, card: card});
+        }
     }
 }
 </script>
