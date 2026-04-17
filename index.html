@@ -63,7 +63,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- Config (Placeholder) ---
@@ -94,15 +94,28 @@ function logCLI(msg) {
     el.scrollTop = el.scrollHeight;
 }
 
-// 認証完了まで待機
+// Canvas環境用の確実な認証初期化プロセス
+const initAuth = async () => {
+    try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+            await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+            await signInAnonymously(auth);
+        }
+    } catch(e) {
+        logCLI(`ERROR: AUTH FAILED. ${e.message}`);
+    }
+};
+
+initAuth();
+
+// 認証状態の監視とUIのロック解除
 onAuthStateChanged(auth, (user) => {
     if (user) {
         myId = user.uid;
         logCLI(`SYSTEM: AUTHENTICATED [${myId.substring(0,6)}]`);
         document.getElementById('btn-host').disabled = false;
         document.getElementById('btn-join').disabled = false;
-    } else {
-        signInAnonymously(auth).catch(e => logCLI(`ERROR: ${e.message}`));
     }
 });
 
