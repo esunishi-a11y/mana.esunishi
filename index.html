@@ -411,7 +411,9 @@ function handleIncomingData(conn, data) {
             addLog(`SYSTEM: ${data.name} entered the arena.`, true);
             broadcastState();
         } else if (data.type === 'ACTION') {
-            processPlayerAction(data.id, data.card);
+            // 受信した cardId から実際のカードデータを復元
+            const cardObj = CARDS.find(c => c.id === data.cardId);
+            processPlayerAction(data.id, cardObj);
         }
     } else {
         if(data.type === 'STATE_SYNC') {
@@ -428,9 +430,9 @@ function handleIncomingData(conn, data) {
             }
             updateLeaderboard();
         } else if (data.type === 'ROUND_START') {
-            console.log("ROUND START RECEIVED", data.hand);
-            myHand = data.hand;
-            myState = 'SELECTING'; // 確実に手札選択状態にする
+            // IDリストからカードオブジェクトを復元
+            myHand = data.handIds.map(id => CARDS.find(c => c.id === id));
+            myState = 'SELECTING';
             selectedCardIndex = -1;
             document.getElementById('lobby-header').style.display = 'none';
         } else if (data.type === 'ROUND_RESOLVE') {
@@ -474,21 +476,21 @@ function startNewRound() {
     players.forEach(p => {
         p.status = 'thinking';
         p.chosenCard = null;
-        // 毎回新しい手札を生成
-        const hand = Array.from({length: 4}, () => CARDS[Math.floor(Math.random() * CARDS.length)]);
+        
+        // カードオブジェクトそのものではなく ID の配列を作成
+        const handIds = Array.from({length: 4}, () => CARDS[Math.floor(Math.random() * CARDS.length)].id);
         
         if(p.id === myId) {
-            myHand = hand;
+            myHand = handIds.map(id => CARDS.find(c => c.id === id));
             myState = 'SELECTING';
             selectedCardIndex = -1;
         } else {
-            // クライアントへ送信
             const targetConn = connections.find(conn => conn.peer === p.id);
             if(targetConn && targetConn.open) {
-                console.log(`Sending hand to ${p.id}`);
+                // 関数を含まない ID 配列のみを送信
                 targetConn.send({
                     type: 'ROUND_START', 
-                    hand: hand, 
+                    handIds: handIds, 
                     round: currentRound
                 });
             }
@@ -505,7 +507,6 @@ function processPlayerAction(pid, card) {
         p.chosenCard = card;
         broadcastState();
         
-        // 全員が揃ったかチェック
         if(players.every(pl => pl.status === 'ready')) {
             setTimeout(resolveBattle, 500);
         }
@@ -726,6 +727,7 @@ function renderHand() {
     const y = canvas.height - cardH - 30;
 
     myHand.forEach((card, i) => {
+        if(!card) return;
         const x = startX + i * (cardW + 15);
         const isHover = mouseX >= x && mouseX <= x+cardW && mouseY >= y && mouseY <= y+cardH;
         const isSelected = selectedCardIndex === i;
@@ -818,7 +820,8 @@ function confirmAction() {
         processPlayerAction(myId, card);
     } else {
         if(hostConn && hostConn.open) {
-            hostConn.send({type: 'ACTION', id: myId, card: card});
+            // ここでも cardId のみを送信
+            hostConn.send({type: 'ACTION', id: myId, cardId: card.id});
         }
     }
 }
