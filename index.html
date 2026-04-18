@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>マナ・サイクル・コロシアム - P2P Edition Ver 2.0</title>
+    <title>マナ・サイクル・コロシアム - P2P Edition Ver 2.1</title>
     <!-- PeerJS for WebRTC connectivity -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
@@ -198,7 +198,7 @@
 
 <div id="login-screen">
     <div class="login-box">
-        <h1>MANA CYCLE COLOSSEUM<br><span style="font-size: 14px; color: #aaa;">Ver 2.0 - Deck & Auto Update</span></h1>
+        <h1>MANA CYCLE COLOSSEUM<br><span style="font-size: 14px; color: #aaa;">Ver 2.1 - Deadlock Prevent</span></h1>
         
         <div class="input-group">
             <label>> USERNAME</label>
@@ -261,7 +261,7 @@ const CARDS = [
             let t = targets[Math.floor(Math.random() * targets.length)];
             if(t.isDefending) {
                 logs.push(`${user.name}の攻撃! しかし${t.name}のシールドが防いだ!`);
-                t.guardedThisTurn = true; // 防御成功を記録
+                t.guardedThisTurn = true;
             } else {
                 const amt = Math.min(t.score, 250);
                 t.score -= amt; user.score += amt;
@@ -271,7 +271,7 @@ const CARDS = [
         }
     }},
     { id: 'c2', name: "Holy Barrier", type: "DEF", color: "#3498db", desc: "このターンの攻撃を遮断する", 
-      effect: () => {} // DEF判定はループの外で行う
+      effect: () => {} 
     },
     { id: 'c3', name: "Mana Siphon", type: "MAG", color: "#9b59b6", desc: "全員から100ptずつ吸収する", 
       effect: (user, ps, logs, parts) => {
@@ -323,7 +323,7 @@ const CARDS = [
                 user.score = temp;
                 logs.push(`⚠️ ${user.name}の奇跡! ${top.name}とスコアが入れ替わった!!`);
                 parts.push({from: top.id, to: user.id, color: '#f1c40f'});
-                parts.push({from: user.id, to: top.id, color: '#f1c40f'}); // 相互エフェクト
+                parts.push({from: user.id, to: top.id, color: '#f1c40f'});
             }
         } else {
             logs.push(`${user.name}の奇跡は対象がなく不発に終わった。`);
@@ -374,16 +374,15 @@ const CARDS = [
 function buildDeck() {
     let deck = [];
     const add = (id, count) => { for(let i=0;i<count;i++) deck.push(id); };
-    add('c1', 12); // ATK
-    add('c2', 12); // DEF
-    add('c3', 8);  // MAG (All)
-    add('c4', 8);  // ATK (Neighbors)
-    add('c5', 4);  // MAG (Swap)
-    add('a1', 4);  // AUTO (Aegis)
-    add('a2', 4);  // AUTO (Desperation)
-    add('a3', 4);  // AUTO (Vengeance)
+    add('c1', 12); 
+    add('c2', 12); 
+    add('c3', 8);  
+    add('c4', 8);  
+    add('c5', 4);  
+    add('a1', 4);  
+    add('a2', 4);  
+    add('a3', 4);  
     
-    // Shuffle
     for(let i = deck.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [deck[i], deck[j]] = [deck[j], deck[i]];
@@ -406,7 +405,7 @@ let gamePhase = 'LOBBY';
 let currentRound = 0;
 
 let myHand = [];
-let myState = 'IDLE'; 
+let myState = 'IDLE'; // SELECTING, REDRAW_SELECT, WAITING
 let selectedCardIndex = -1;
 
 function logCLI(msg) {
@@ -452,7 +451,7 @@ function initPeer(username, targetRoomId = null) {
                 id: myId, name: username, score: 1000, status: 'lobby', 
                 handIds: [], consecutiveGuards: 0
             });
-            sharedDeck = buildDeck(); // ホストのみデッキを持つ
+            sharedDeck = buildDeck();
             transitionToGame();
             updateLeaderboard();
         } else {
@@ -509,7 +508,7 @@ function handleIncomingData(conn, data) {
             addLog(`SYSTEM: ${data.name} entered the arena.`, true);
             broadcastState();
         } else if (data.type === 'ACTION') {
-            processPlayerAction(data.id, data.cardId);
+            processPlayerAction(data.id, data.actionData);
         }
     } else {
         if(data.type === 'STATE_SYNC') {
@@ -539,7 +538,6 @@ function handleIncomingData(conn, data) {
 function broadcastState() {
     const msg = {
         type: 'STATE_SYNC',
-        // クライアント側で表示に必要なプロパティのみ抽出して送る
         players: players.map(p => ({
             id: p.id, name: p.name, score: p.score, status: p.status, consecutiveGuards: p.consecutiveGuards
         })),
@@ -571,13 +569,12 @@ function startNewRound() {
 
     players.forEach(p => {
         p.status = 'thinking';
-        p.chosenCardId = null;
+        p.actionData = null; // 以前の chosenCardId をアクションデータオブジェクトに変更
         
-        // 手札補充 (常に4枚になるように)
         while(p.handIds.length < 4) {
             const drawn = sharedDeck.shift();
             if(drawn) p.handIds.push(drawn);
-            else break; // 山札が空の場合は引けない
+            else break;
         }
         
         if(p.id === myId) {
@@ -599,14 +596,13 @@ function startNewRound() {
     broadcastState();
 }
 
-function processPlayerAction(pid, cardId) {
+function processPlayerAction(pid, actionData) {
     let p = players.find(p => p.id === pid);
     if(p && p.status === 'thinking') {
         p.status = 'ready';
-        p.chosenCardId = cardId;
+        p.actionData = actionData;
         broadcastState();
         
-        // 全生存者が準備完了かチェック
         const alivePlayers = players.filter(pl => pl.score > 0);
         if(alivePlayers.every(pl => pl.status === 'ready')) {
             setTimeout(resolveBattle, 500);
@@ -619,28 +615,44 @@ function resolveBattle() {
     myState = 'IDLE';
     let logs = [];
     let effects = [];
-    let usedCards = []; // 山札に戻すカード
+    let usedCards = []; 
 
-    // 事前準備
     let oldScores = {};
     players.forEach(p => {
         oldScores[p.id] = p.score;
         p.isDefending = false;
         p.guardedThisTurn = false;
+        p.chosenCardId = null; // 一時変数
     });
 
-    // 1. 防御判定
+    // 1. 各プレイヤーのアクションに応じた事前準備と防御判定
     players.forEach(p => {
-        if(p.chosenCardId === 'c2') {
-            p.isDefending = true;
-            logs.push(`🛡️ ${p.name} がシールドを展開。`);
-            effects.push({from: p.id, to: p.id, type: 'shield', color: '#00ffff'});
+        if (!p.actionData) return;
+
+        if (p.actionData.actionType === 'PLAY') {
+            p.chosenCardId = p.actionData.cardId;
+            if(p.chosenCardId === 'c2') {
+                p.isDefending = true;
+                logs.push(`🛡️ ${p.name} がシールドを展開。`);
+                effects.push({from: p.id, to: p.id, type: 'shield', color: '#00ffff'});
+            }
+        } else if (p.actionData.actionType === 'PASS') {
+            logs.push(`💨 ${p.name} は様子を見ている... (PASS)`);
+        } else if (p.actionData.actionType === 'REDRAW') {
+            const idx = p.handIds.indexOf(p.actionData.discardId);
+            if(idx !== -1) {
+                p.handIds.splice(idx, 1);
+                usedCards.push(p.actionData.discardId);
+                const drawn = sharedDeck.shift();
+                if(drawn) p.handIds.push(drawn);
+            }
+            logs.push(`🔄 ${p.name} はカードを引き直した。 (REDRAW)`);
         }
     });
 
     // 2. 攻撃・魔法実行
     players.forEach(p => {
-        if(p.chosenCardId && p.chosenCardId !== 'c2') {
+        if(p.actionData && p.actionData.actionType === 'PLAY' && p.chosenCardId && p.chosenCardId !== 'c2') {
             const cardRef = CARDS.find(c => c.id === p.chosenCardId);
             if(cardRef) cardRef.effect(p, players, logs, effects);
         }
@@ -649,16 +661,15 @@ function resolveBattle() {
     // 3. AUTOカードの自動発動チェック
     let autoContext = { oldScores };
     players.forEach(p => {
-        if(p.score <= 0) return; // 死亡者は発動不可
+        if(p.score <= 0) return;
         let newHandIds = [];
         p.handIds.forEach(cId => {
             const cardRef = CARDS.find(c => c.id === cId);
             if(cardRef && cardRef.type === 'AUTO' && cardRef.autoCheck(p, autoContext)) {
-                // 条件を満たしたら自動発動し、手札から消して山札の底へ
                 cardRef.autoEffect(p, players, logs, effects);
                 usedCards.push(cId);
             } else {
-                newHandIds.push(cId); // 手札に残る
+                newHandIds.push(cId);
             }
         });
         p.handIds = newHandIds;
@@ -666,24 +677,20 @@ function resolveBattle() {
 
     // 4. ステータス更新・使用カードの処理
     players.forEach(p => {
-        // ガード連続記録
         if(p.guardedThisTurn) {
             p.consecutiveGuards += 1;
         } else if (!p.isDefending) {
-            p.consecutiveGuards = 0; // 防御しなかったらリセット
+            p.consecutiveGuards = 0;
         }
 
-        // 使用したカードを取り除く
-        if(p.chosenCardId) {
+        if(p.actionData && p.actionData.actionType === 'PLAY' && p.chosenCardId) {
             const idx = p.handIds.indexOf(p.chosenCardId);
             if(idx !== -1) p.handIds.splice(idx, 1);
             usedCards.push(p.chosenCardId);
         }
     });
 
-    // 山札の底に返す
     sharedDeck.push(...usedCards);
-
     logs.forEach(l => addLog(l, true));
 
     const resolveMsg = {
@@ -697,7 +704,6 @@ function resolveBattle() {
     triggerEffects(effects);
     broadcastState();
 
-    // 終了判定（サドンデス：誰かのスコアが0以下になったら終了）
     const isGameOver = players.some(p => p.score <= 0);
 
     setTimeout(() => {
@@ -741,7 +747,7 @@ function updateLeaderboard() {
     [...players].sort((a,b) => b.score - a.score).forEach((p, i) => {
         const li = document.createElement('li');
         if(p.id === myId) li.className = 'my-score';
-        if(p.score <= 0) li.style.opacity = '0.5'; // 脱落者
+        if(p.score <= 0) li.style.opacity = '0.5';
         
         let statusHtml = '';
         if(p.score <= 0) statusHtml = '<span class="badge" style="background:#e74c3c;">DEAD</span>';
@@ -796,8 +802,8 @@ function triggerEffects(effs) {
 
 function renderLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    const cx = canvas.width / 2;
+    const gameW = canvas.width - 300;
+    const cx = gameW / 2;
     const cy = canvas.height / 2 - 40;
     const radius = Math.min(cx, cy) * 0.7;
 
@@ -860,7 +866,6 @@ function renderLoop() {
         return true;
     });
 
-    // 死亡している場合は手札を表示しない
     const me = players.find(p => p.id === myId);
     if(me && me.score <= 0) {
         ctx.fillStyle = '#e74c3c';
@@ -868,7 +873,39 @@ function renderLoop() {
         ctx.textAlign = 'center';
         ctx.fillText("YOU DIED", cx, canvas.height - 100);
     } else {
+        const allAuto = myHand.length > 0 && myHand.every(c => c && c.type === 'AUTO');
+        
         if(gamePhase === 'PLAYING' && myState === 'SELECTING') {
+            if(allAuto) {
+                // PASS / REDRAW UI
+                ctx.fillStyle = 'rgba(0,0,0,0.8)';
+                ctx.fillRect(0, canvas.height - 220, gameW, 220);
+                
+                ctx.fillStyle = '#ff4500';
+                ctx.font = 'bold 18px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText("手札が全てAUTOカードです。アクションを選択してください。", cx, canvas.height - 160);
+
+                ctx.fillStyle = '#555';
+                ctx.fillRect(cx - 140, canvas.height - 130, 120, 40);
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 16px Arial';
+                ctx.fillText("PASS", cx - 80, canvas.height - 104);
+
+                ctx.fillStyle = '#3498db';
+                ctx.fillRect(cx + 20, canvas.height - 130, 120, 40);
+                ctx.fillStyle = '#fff';
+                ctx.fillText("REDRAW", cx + 80, canvas.height - 104);
+                
+                renderHand(); 
+            } else {
+                renderHand();
+            }
+        } else if (gamePhase === 'PLAYING' && myState === 'REDRAW_SELECT') {
+            ctx.fillStyle = '#e74c3c';
+            ctx.font = 'bold 18px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText("捨てるAUTOカードを1枚選んでください", cx, canvas.height - 200);
             renderHand();
         } else if (myState === 'WAITING') {
             ctx.fillStyle = '#fff';
@@ -896,18 +933,20 @@ function renderLoop() {
 }
 
 function renderHand() {
+    const gameW = canvas.width - 300;
     const cardW = 120;
     const cardH = 160;
     const totalW = myHand.length * (cardW + 15);
-    const startX = (canvas.width - totalW) / 2;
+    const startX = (gameW - totalW) / 2;
     const y = canvas.height - cardH - 30;
 
     myHand.forEach((card, i) => {
         if(!card) return;
         const x = startX + i * (cardW + 15);
         const isAuto = card.type === 'AUTO';
-        const isHover = !isAuto && mouseX >= x && mouseX <= x+cardW && mouseY >= y && mouseY <= y+cardH;
-        const isSelected = selectedCardIndex === i;
+        const selectable = myState === 'REDRAW_SELECT' || !isAuto;
+        const isHover = selectable && mouseX >= x && mouseX <= x+cardW && mouseY >= y && mouseY <= y+cardH;
+        const isSelected = selectable && selectedCardIndex === i;
 
         ctx.fillStyle = isSelected ? '#331a00' : '#1a0d00';
         ctx.strokeStyle = isSelected ? varColor('--accent-gold') : card.color;
@@ -931,18 +970,18 @@ function renderHand() {
         ctx.fillStyle = '#aaa';
         drawText(card.desc, x + cardW/2, drawY + 90, cardW - 10);
 
-        if(isAuto) {
+        if(isAuto && myState === 'SELECTING') {
             ctx.fillStyle = 'rgba(0,0,0,0.6)';
             ctx.fillRect(x, drawY + cardH - 25, cardW, 25);
             ctx.fillStyle = card.color;
             ctx.font = 'bold 10px Arial';
             ctx.fillText("PASSIVE TRIGGER", x + cardW/2, drawY + cardH - 8);
         } else if(isSelected) {
-            ctx.fillStyle = varColor('--accent-gold');
+            ctx.fillStyle = myState === 'REDRAW_SELECT' ? '#e74c3c' : varColor('--accent-gold');
             ctx.fillRect(x, drawY + cardH + 5, cardW, 25);
             ctx.fillStyle = '#000';
             ctx.font = 'bold 12px Arial';
-            ctx.fillText("CAST SPELL", x + cardW/2, drawY + cardH + 22);
+            ctx.fillText(myState === 'REDRAW_SELECT' ? "DISCARD" : "CAST SPELL", x + cardW/2, drawY + cardH + 22);
         }
     });
 }
@@ -976,40 +1015,60 @@ canvas.addEventListener('mousemove', e => {
 });
 
 canvas.addEventListener('mousedown', e => {
-    if(gamePhase !== 'PLAYING' || myState !== 'SELECTING') return;
-    
-    // 自分が死んでいる場合は操作不可
+    if(gamePhase !== 'PLAYING') return;
     const me = players.find(p => p.id === myId);
     if(me && me.score <= 0) return;
+
+    const gameW = canvas.width - 300;
+    const cx = gameW / 2;
+    const allAuto = myHand.length > 0 && myHand.every(c => c && c.type === 'AUTO');
+
+    // 4枚AUTO時の UI クリック判定
+    if(myState === 'SELECTING' && allAuto) {
+        if(mouseX >= cx - 140 && mouseX <= cx - 20 && mouseY >= canvas.height - 130 && mouseY <= canvas.height - 90) {
+            confirmAction({actionType: 'PASS'});
+            return;
+        }
+        if(mouseX >= cx + 20 && mouseX <= cx + 140 && mouseY >= canvas.height - 130 && mouseY <= canvas.height - 90) {
+            myState = 'REDRAW_SELECT';
+            selectedCardIndex = -1;
+            return;
+        }
+    }
+
+    if(myState !== 'SELECTING' && myState !== 'REDRAW_SELECT') return;
 
     const cardW = 120;
     const cardH = 160;
     const totalW = myHand.length * (cardW + 15);
-    const startX = (canvas.width - totalW) / 2;
+    const startX = (gameW - totalW) / 2;
     const y = canvas.height - cardH - 30;
 
     myHand.forEach((card, i) => {
-        if(card.type === 'AUTO') return; // AUTOカードはクリックできない
+        const isAuto = card.type === 'AUTO';
+        if(isAuto && myState === 'SELECTING') return; 
         
         const x = startX + i * (cardW + 15);
         if(mouseX >= x && mouseX <= x+cardW && mouseY >= y && mouseY <= y+cardH) {
             selectedCardIndex = i;
         }
         if(selectedCardIndex === i && mouseX >= x && mouseX <= x+cardW && mouseY >= y+cardH+5 && mouseY <= y+cardH+30) {
-            confirmAction();
+            if(myState === 'REDRAW_SELECT') {
+                confirmAction({actionType: 'REDRAW', discardId: card.id});
+            } else {
+                confirmAction({actionType: 'PLAY', cardId: card.id});
+            }
         }
     });
 });
 
-function confirmAction() {
-    if(selectedCardIndex === -1) return;
-    const card = myHand[selectedCardIndex];
+function confirmAction(actionData) {
     myState = 'WAITING';
     if(isHost) {
-        processPlayerAction(myId, card.id);
+        processPlayerAction(myId, actionData);
     } else {
         if(hostConn && hostConn.open) {
-            hostConn.send({type: 'ACTION', id: myId, cardId: card.id});
+            hostConn.send({type: 'ACTION', id: myId, actionData: actionData});
         }
     }
 }
